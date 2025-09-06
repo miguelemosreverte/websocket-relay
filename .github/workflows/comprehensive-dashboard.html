@@ -750,82 +750,195 @@
             const commits = [deploymentData, ...historyData].slice(0, 20);
             const labels = commits.map(c => c.commit_short || 'unknown');
             
+            // Debug: Log the first few commits to see their structure
+            console.log('Historical commits data structure:', commits.slice(0, 3).map(c => ({
+                commit: c.commit_short,
+                has_results: !!c.benchmark_results,
+                has_transport: !!c.benchmark_results?.results,
+                websocket_data: c.benchmark_results?.results?.websocket,
+                direct_data: {
+                    messages_per_second: c.benchmark_results?.messages_per_second,
+                    avg_latency: c.benchmark_results?.avg_latency_ms
+                }
+            })));
+            
             let datasets = [];
+            
+            // Helper function to extract metrics from different benchmark formats
+            function extractMetrics(commit) {
+                const bench = commit.benchmark_results;
+                if (!bench) return null;
+                
+                // Try new transport format first (results.websocket)
+                if (bench.results && bench.results.websocket) {
+                    return bench.results.websocket;
+                }
+                
+                // Fall back to old direct format
+                if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                    // Map old format to new format keys
+                    return {
+                        average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
+                        p50_latency_ms: bench.p50_latency_ms || 0,
+                        p95_latency_ms: bench.p95_latency_ms || 0,
+                        p99_latency_ms: bench.p99_latency_ms || 0,
+                        messages_per_second: bench.messages_per_second || 0,
+                        bytes_per_second: bench.bytes_per_second || (bench.bandwidth_mbps ? bench.bandwidth_mbps * 125000 : 0),
+                        bandwidth_mbps: bench.bandwidth_mbps || 0
+                    };
+                }
+                
+                return null;
+            }
             
             if (view === 'latency') {
                 datasets = [
                     {
-                        label: 'Average Latency',
+                        label: 'Average Latency (ms)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.average_latency_ms || metrics?.avg_latency_ms || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.average_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.blue,
-                        borderWidth: 2
+                        backgroundColor: chartColors.blue + '20',
+                        borderWidth: 2,
+                        tension: 0.3
                     },
                     {
-                        label: 'P99 Latency',
+                        label: 'P99 Latency (ms)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.p99_latency_ms || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.p99_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.red,
-                        borderWidth: 2
+                        backgroundColor: chartColors.red + '20',
+                        borderWidth: 2,
+                        tension: 0.3
                     }
                 ];
+                
+                // Add UDP data if available
+                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
+                if (hasUDP) {
+                    datasets.push({
+                        label: 'UDP Avg Latency (ms)',
+                        data: commits.map(c => {
+                            return c.benchmark_results?.results?.udp?.average_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.udp,
+                        backgroundColor: chartColors.udp + '20',
+                        borderWidth: 2,
+                        borderStyle: 'dashed',
+                        tension: 0.3
+                    });
+                }
             } else if (view === 'throughput') {
                 datasets = [
                     {
                         label: 'Messages/Second',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.messages_per_second || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.messages_per_second || 0) : 0;
                         }),
                         borderColor: chartColors.green,
-                        borderWidth: 2
+                        backgroundColor: chartColors.green + '20',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
                     }
                 ];
+                
+                // Add UDP if available
+                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
+                if (hasUDP) {
+                    datasets.push({
+                        label: 'UDP Messages/Second',
+                        data: commits.map(c => {
+                            return c.benchmark_results?.results?.udp?.messages_per_second || 0;
+                        }),
+                        borderColor: chartColors.udp,
+                        backgroundColor: chartColors.udp + '20',
+                        borderWidth: 2,
+                        borderStyle: 'dashed',
+                        fill: false,
+                        tension: 0.3
+                    });
+                }
             } else if (view === 'bandwidth') {
                 datasets = [
                     {
                         label: 'Bandwidth (MB/s)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            const bytesPerSec = metrics?.bytes_per_second || (metrics?.bandwidth_mbps * 125000) || 0;
-                            return bytesPerSec / 1024 / 1024;
+                            const metrics = extractMetrics(c);
+                            if (!metrics) return 0;
+                            
+                            // Try bytes_per_second first, then bandwidth_mbps
+                            if (metrics.bytes_per_second) {
+                                return metrics.bytes_per_second / 1024 / 1024;
+                            } else if (metrics.bandwidth_mbps) {
+                                return metrics.bandwidth_mbps / 8; // Convert Mbps to MB/s
+                            }
+                            return 0;
                         }),
                         borderColor: chartColors.purple,
-                        borderWidth: 2
+                        backgroundColor: chartColors.purple + '20',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
                     }
                 ];
+                
+                // Add UDP if available
+                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
+                if (hasUDP) {
+                    datasets.push({
+                        label: 'UDP Bandwidth (MB/s)',
+                        data: commits.map(c => {
+                            const udp = c.benchmark_results?.results?.udp;
+                            return udp ? (udp.bytes_per_second || 0) / 1024 / 1024 : 0;
+                        }),
+                        borderColor: chartColors.udp,
+                        backgroundColor: chartColors.udp + '20',
+                        borderWidth: 2,
+                        borderStyle: 'dashed',
+                        fill: false,
+                        tension: 0.3
+                    });
+                }
             } else if (view === 'percentiles') {
                 datasets = [
                     {
-                        label: 'P50',
+                        label: 'P50 Latency (ms)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.p50_latency_ms || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.p50_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.green,
-                        borderWidth: 2
+                        backgroundColor: chartColors.green + '20',
+                        borderWidth: 2,
+                        tension: 0.3
                     },
                     {
-                        label: 'P95',
+                        label: 'P95 Latency (ms)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.p95_latency_ms || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.p95_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.yellow,
-                        borderWidth: 2
+                        backgroundColor: chartColors.yellow + '20',
+                        borderWidth: 2,
+                        tension: 0.3
                     },
                     {
-                        label: 'P99',
+                        label: 'P99 Latency (ms)',
                         data: commits.map(c => {
-                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
-                            return metrics?.p99_latency_ms || 0;
+                            const metrics = extractMetrics(c);
+                            return metrics ? (metrics.p99_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.red,
-                        borderWidth: 2
+                        backgroundColor: chartColors.red + '20',
+                        borderWidth: 2,
+                        tension: 0.3
                     }
                 ];
             }
