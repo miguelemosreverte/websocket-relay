@@ -111,6 +111,9 @@ jobs:
       run: |
         COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
         
+        # Escape commit message for JSON
+        ESCAPED_MSG=$(echo "${{ github.event.head_commit.message }}" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/\r/\\r/g' | sed 's/\t/\\t/g')
+        
         # Create deployment report
         cat > deployment-report.json << EOF
         {
@@ -118,7 +121,7 @@ jobs:
           "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
           "commit": "${{ github.sha }}",
           "commit_short": "$COMMIT_SHORT",
-          "commit_message": "${{ github.event.head_commit.message }}",
+          "commit_message": "$ESCAPED_MSG",
           "service_version": "${{ steps.health_check.outputs.version }}",
           "health_status": "${{ steps.health_check.outputs.status }}",
           "health_response": ${{ steps.health_check.outputs.response || 'null' }},
