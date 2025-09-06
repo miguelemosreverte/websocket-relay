@@ -1,5 +1,44 @@
 [
   {
+    "timestamp": "2025-09-06 01:59:28 UTC",
+    "commit": "04cd6ba3ee20b713abe28f55691dfc813e91de99",
+    "commit_short": "04cd6ba",
+    "branch": "main",
+    "workflow_run": "17",
+    "deployment_status": "success",
+    "service_version": "2.0.0",
+    "health_response": {
+      "status": "healthy",
+      "version": "2.0.0",
+      "uptime": "11s",
+      "commit_hash": "04cd6ba",
+      "build_time": "2025-09-06 01:58:37 UTC",
+      "timestamp": "2025-09-06T01:58:51.754500633Z",
+      "service_name": "websocket-relay"
+    },
+    "benchmark_results": {
+      "duration_seconds": 5.001760322,
+      "total_messages_sent": 998,
+      "total_messages_received": 0,
+      "total_bytes_sent": 135516,
+      "total_bytes_received": 0,
+      "avg_latency_ms": 0,
+      "p50_latency_ms": 0,
+      "p95_latency_ms": 0,
+      "p99_latency_ms": 0,
+      "max_latency_ms": 0,
+      "min_latency_ms": 0,
+      "connection_count": 20,
+      "messages_per_second": 199.5297526773415,
+      "bandwidth_mbps": 0.21674929029116322,
+      "errors": 2,
+      "timestamp": "2025-09-06T01:59:27Z"
+    },
+    "functional_test_status": "passed",
+    "github_actor": "miguelemosreverte",
+    "repository": "miguelemosreverte/websocket-relay"
+  },
+  {
     "timestamp": "2025-09-06 01:56:07 UTC",
     "commit": "c13cc19060635ece2ba3101208f3721a8f751198",
     "commit_short": "c13cc19",
