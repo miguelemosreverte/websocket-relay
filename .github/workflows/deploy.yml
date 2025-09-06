@@ -365,16 +365,30 @@ jobs:
         EOF
         
         # Replace placeholders with actual data
-        # First, save the template
-        cp index.html index.html.tmp
+        # Write JSON to a file to avoid escaping issues
+        echo "$DEPLOYMENT_DATA" > deployment.json
         
-        # Replace all placeholders
-        sed -e "s|DEPLOYMENT_DATA_PLACEHOLDER|$DEPLOYMENT_DATA|g" \
-            -e "s|SERVER_IP_PLACEHOLDER|${{ secrets.SERVER_IP }}|g" \
-            -e "s|GITHUB_REPOSITORY_PLACEHOLDER|${{ github.repository }}|g" \
-            index.html.tmp > index.html
+        # Use Python to safely replace the placeholders
+        python3 << 'PYTHON'
+        import json
         
-        rm index.html.tmp
+        # Read the deployment data
+        with open('deployment.json', 'r') as f:
+            deployment_data = f.read().strip()
+        
+        # Read the HTML template
+        with open('index.html', 'r') as f:
+            html = f.read()
+        
+        # Replace placeholders
+        html = html.replace('DEPLOYMENT_DATA_PLACEHOLDER', deployment_data)
+        html = html.replace('SERVER_IP_PLACEHOLDER', '${{ secrets.SERVER_IP }}')
+        html = html.replace('GITHUB_REPOSITORY_PLACEHOLDER', '${{ github.repository }}')
+        
+        # Write the final HTML
+        with open('index.html', 'w') as f:
+            f.write(html)
+        PYTHON
         
     - name: Setup Pages
       uses: actions/configure-pages@v4
