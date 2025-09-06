@@ -778,241 +778,50 @@
             
             // Helper function to extract metrics from different benchmark formats
             function extractMetrics(commit) {
-                const bench = commit.benchmark_results;
-                if (!bench) return null;
-                
-                // Try new transport format first (results.websocket)
-                if (bench.results && bench.results.websocket) {
-                    return bench.results.websocket;
-                }
-                
-                // Fall back to old direct format
-                if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
-                    // Check if this is a broken benchmark (no messages received)
-                    if (bench.total_messages_received === 0) {
-                        // This is a broken benchmark, skip it entirely by returning null
-                        console.warn(`Skipping broken benchmark for commit ${commit.commit_short}: no messages received`);
-                        return null;
-                    }
-                    
-                    // Map old format to new format keys
-                    // For bandwidth, convert from Mbps to bytes/sec if needed
-                    let bytesPerSec = bench.bytes_per_second || 0;
-                    if (!bytesPerSec && bench.avg_bandwidth_mbps) {
-                        bytesPerSec = bench.avg_bandwidth_mbps * 125000; // Mbps to bytes/sec
-                    } else if (!bytesPerSec && bench.peak_bandwidth_mbps) {
-                        bytesPerSec = bench.peak_bandwidth_mbps * 125000;
-                    }
-                    
-                    return {
-                        average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
-                        p50_latency_ms: bench.p50_latency_ms || 0,
-                        p95_latency_ms: bench.p95_latency_ms || 0,
-                        p99_latency_ms: bench.p99_latency_ms || 0,
-                        messages_per_second: bench.messages_per_second || 0,
-                        bytes_per_second: bytesPerSec,
-                        bandwidth_mbps: bench.bandwidth_mbps || bench.avg_bandwidth_mbps || bench.peak_bandwidth_mbps || 0
-                    };
-                }
-                
-                return null;
+            const bench = commit.benchmark_results;
+            if (!bench) return null;
+            
+            // Try new transport format first (results.websocket)
+            if (bench.results && bench.results.websocket) {
+                console.log('Using new format for', commit.commit_short, bench.results.websocket);
+                return bench.results.websocket;
             }
             
-            if (view === 'latency') {
-                datasets = [
-                    {
-                        label: 'Average Latency (ms)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            // extractMetrics returns null for broken benchmarks
-                            if (!metrics) {
-                                return null;
-                            }
-                            const value = metrics ? (metrics.average_latency_ms || 0) : null;
-                            if (value === 0 && metrics) {
-                                console.warn(`Zero latency for ${c.commit_short}, metrics:`, metrics);
-                            }
-                            return value;
-                        }),
-                        borderColor: chartColors.blue,
-                        backgroundColor: chartColors.blue + '20',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        spanGaps: true // Connect non-null points
-                    },
-                    {
-                        label: 'P99 Latency (ms)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p99_latency_ms || 0) : null;
-                        }),
-                        borderColor: chartColors.red,
-                        backgroundColor: chartColors.red + '20',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        spanGaps: true
-                    }
-                ];
-                
-                // Add UDP data if available
-                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
-                if (hasUDP) {
-                    datasets.push({
-                        label: 'UDP Avg Latency (ms)',
-                        data: commits.map(c => {
-                            return c.benchmark_results?.results?.udp?.average_latency_ms || 0;
-                        }),
-                        borderColor: chartColors.udp,
-                        backgroundColor: chartColors.udp + '20',
-                        borderWidth: 2,
-                        borderStyle: 'dashed',
-                        tension: 0.3
-                    });
+            // Fall back to old direct format
+            if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                // Check if this is a broken benchmark (no messages received)
+                if (bench.total_messages_received === 0) {
+                    console.warn('Broken benchmark for', commit.commit_short, '- no messages received');
+                    // Skip broken benchmarks entirely - return null
+                    return null;
                 }
-            } else if (view === 'throughput') {
-                datasets = [
-                    {
-                        label: 'Messages/Second',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            return metrics ? (metrics.messages_per_second || 0) : null;
-                        }),
-                        borderColor: chartColors.green,
-                        backgroundColor: chartColors.green + '20',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3
-                    }
-                ];
                 
-                // Add UDP if available
-                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
-                if (hasUDP) {
-                    datasets.push({
-                        label: 'UDP Messages/Second',
-                        data: commits.map(c => {
-                            return c.benchmark_results?.results?.udp?.messages_per_second || 0;
-                        }),
-                        borderColor: chartColors.udp,
-                        backgroundColor: chartColors.udp + '20',
-                        borderWidth: 2,
-                        borderStyle: 'dashed',
-                        fill: false,
-                        tension: 0.3
-                    });
-                }
-            } else if (view === 'bandwidth') {
-                datasets = [
-                    {
-                        label: 'Bandwidth (MB/s)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            if (!metrics) return null;
-                            
-                            // Try bytes_per_second first, then bandwidth_mbps
-                            if (metrics.bytes_per_second && metrics.bytes_per_second > 0) {
-                                return metrics.bytes_per_second / 1024 / 1024;
-                            } else if (metrics.bandwidth_mbps && metrics.bandwidth_mbps > 0) {
-                                return metrics.bandwidth_mbps / 8; // Convert Mbps to MB/s
-                            }
-                            return 0;
-                        }),
-                        borderColor: chartColors.purple,
-                        backgroundColor: chartColors.purple + '20',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3
-                    }
-                ];
+                console.log('Using old format for', commit.commit_short, {
+                    avg_latency: bench.avg_latency_ms,
+                    messages: bench.messages_per_second
+                });
                 
-                // Add UDP if available
-                const hasUDP = commits.some(c => c.benchmark_results?.results?.udp);
-                if (hasUDP) {
-                    datasets.push({
-                        label: 'UDP Bandwidth (MB/s)',
-                        data: commits.map(c => {
-                            const udp = c.benchmark_results?.results?.udp;
-                            return udp ? (udp.bytes_per_second || 0) / 1024 / 1024 : 0;
-                        }),
-                        borderColor: chartColors.udp,
-                        backgroundColor: chartColors.udp + '20',
-                        borderWidth: 2,
-                        borderStyle: 'dashed',
-                        fill: false,
-                        tension: 0.3
-                    });
+                // Map old format to new format keys
+                let bytesPerSec = bench.bytes_per_second || 0;
+                if (!bytesPerSec && bench.avg_bandwidth_mbps) {
+                    bytesPerSec = bench.avg_bandwidth_mbps * 125000; // Mbps to bytes/sec
+                } else if (!bytesPerSec && bench.bandwidth_mbps) {
+                    bytesPerSec = bench.bandwidth_mbps * 125000;
                 }
-            } else if (view === 'percentiles') {
-                datasets = [
-                    {
-                        label: 'P50 Latency (ms)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p50_latency_ms || 0) : null;
-                        }),
-                        borderColor: chartColors.green,
-                        backgroundColor: chartColors.green + '20',
-                        borderWidth: 2,
-                        tension: 0.3
-                    },
-                    {
-                        label: 'P95 Latency (ms)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p95_latency_ms || 0) : null;
-                        }),
-                        borderColor: chartColors.yellow,
-                        backgroundColor: chartColors.yellow + '20',
-                        borderWidth: 2,
-                        tension: 0.3
-                    },
-                    {
-                        label: 'P99 Latency (ms)',
-                        data: commits.map(c => {
-                            const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p99_latency_ms || 0) : null;
-                        }),
-                        borderColor: chartColors.red,
-                        backgroundColor: chartColors.red + '20',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        spanGaps: true
-                    }
-                ];
+                
+                return {
+                    average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
+                    p50_latency_ms: bench.p50_latency_ms || 0,
+                    p95_latency_ms: bench.p95_latency_ms || 0,
+                    p99_latency_ms: bench.p99_latency_ms || 0,
+                    messages_per_second: bench.messages_per_second || 0,
+                    bytes_per_second: bytesPerSec,
+                    bandwidth_mbps: bench.bandwidth_mbps || bench.avg_bandwidth_mbps || 0
+                };
             }
             
-            historyChart = new Chart(ctx, {
-                type: 'line',
-                data: { labels, datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: '#e2e8f0' }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: { 
-                                color: '#94a3b8',
-                                maxRotation: 45,
-                                minRotation: 45
-                            }
-                        },
-                        y: {
-                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                            ticks: { color: '#94a3b8' }
-                        }
-                    }
-                }
-            });
+            console.log('No metrics found for', commit.commit_short);
+            return null;
         }
 
         function renderTestConfig() {
@@ -1068,6 +877,20 @@
             selectCommit(-1); // Start with current deployment
             showHistoryView('latency', document.querySelector('.tab-button.active'));
             renderTestConfig();
+        });
+    </script>
+
+    <script>
+        // Debug: Log what we're working with
+        console.log('Deployment data:', deploymentData);
+        console.log('History entries:', historyData.length);
+        
+        // Log extraction for each commit
+        const allCommits = [deploymentData, ...historyData].slice(0, 10);
+        console.log('Testing extraction for first 10 commits:');
+        allCommits.forEach(commit => {
+            const metrics = extractMetrics(commit);
+            console.log(commit.commit_short + ':', metrics);
         });
     </script>
 </body>

@@ -789,10 +789,19 @@
                 // Fall back to old direct format
                 if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
                     // Check if this is a broken benchmark (no messages received)
-                    if (bench.total_messages_received === 0) {
-                        // This is a broken benchmark, skip it entirely by returning null
-                        console.warn(`Skipping broken benchmark for commit ${commit.commit_short}: no messages received`);
-                        return null;
+                    if (bench.total_messages_received === 0 && bench.avg_latency_ms === 0) {
+                        // This is a broken benchmark, return null or minimal data
+                        console.warn(`Broken benchmark detected for commit ${commit.commit_short}: no messages received`);
+                        return {
+                            average_latency_ms: 0,
+                            p50_latency_ms: 0,
+                            p95_latency_ms: 0,
+                            p99_latency_ms: 0,
+                            messages_per_second: bench.messages_per_second || 0,
+                            bytes_per_second: 0,
+                            bandwidth_mbps: 0,
+                            is_broken: true
+                        };
                     }
                     
                     // Map old format to new format keys
@@ -824,8 +833,9 @@
                         label: 'Average Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            // extractMetrics returns null for broken benchmarks
-                            if (!metrics) {
+                            // Don't plot zero values from broken benchmarks
+                            if (metrics && metrics.is_broken) {
+                                console.log(`Skipping broken benchmark for ${c.commit_short}`);
                                 return null;
                             }
                             const value = metrics ? (metrics.average_latency_ms || 0) : null;
@@ -844,6 +854,7 @@
                         label: 'P99 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
+                            if (metrics && metrics.is_broken) return null;
                             return metrics ? (metrics.p99_latency_ms || 0) : null;
                         }),
                         borderColor: chartColors.red,
@@ -875,7 +886,7 @@
                         label: 'Messages/Second',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.messages_per_second || 0) : null;
+                            return metrics ? (metrics.messages_per_second || 0) : 0;
                         }),
                         borderColor: chartColors.green,
                         backgroundColor: chartColors.green + '20',
@@ -907,7 +918,10 @@
                         label: 'Bandwidth (MB/s)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            if (!metrics) return null;
+                            if (!metrics) return 0;
+                            
+                            // Skip broken benchmarks
+                            if (metrics.is_broken) return 0;
                             
                             // Try bytes_per_second first, then bandwidth_mbps
                             if (metrics.bytes_per_second && metrics.bytes_per_second > 0) {
@@ -948,7 +962,7 @@
                         label: 'P50 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p50_latency_ms || 0) : null;
+                            return metrics ? (metrics.p50_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.green,
                         backgroundColor: chartColors.green + '20',
@@ -959,7 +973,7 @@
                         label: 'P95 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p95_latency_ms || 0) : null;
+                            return metrics ? (metrics.p95_latency_ms || 0) : 0;
                         }),
                         borderColor: chartColors.yellow,
                         backgroundColor: chartColors.yellow + '20',
@@ -970,6 +984,7 @@
                         label: 'P99 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
+                            if (metrics && metrics.is_broken) return null;
                             return metrics ? (metrics.p99_latency_ms || 0) : null;
                         }),
                         borderColor: chartColors.red,

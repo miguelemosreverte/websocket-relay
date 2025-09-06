@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Dashboard Data</title>
+</head>
+<body>
+    <h1>Dashboard Data Debug</h1>
+    <pre id="output"></pre>
+    
+    <script>
+        // Test data matching what we inject
+        const deploymentData = {
+            "commit_short": "abc123d",
+            "benchmark_results": {
+                "results": {
+                    "websocket": {
+                        "average_latency_ms": 2.83,
+                        "messages_per_second": 200,
+                        "bytes_per_second": 656857
+                    }
+                }
+            }
+        };
+        
+        const historyData = [
+            {
+                "commit_short": "def456a",
+                "benchmark_results": {
+                    "results": {
+                        "websocket": {
+                            "average_latency_ms": 3.5,
+                            "messages_per_second": 180,
+                            "bytes_per_second": 650000
+                        }
+                    }
+                }
+            },
+            {
+                "commit_short": "789012b",
+                "benchmark_results": {
+                    "results": {
+                        "websocket": {
+                            "average_latency_ms": 4.2,
+                            "messages_per_second": 175,
+                            "bytes_per_second": 620000
+                        }
+                    }
+                }
+            }
+        ];
+        
+        // The extractMetrics function from comprehensive-dashboard
+        function extractMetrics(commit) {
+            const bench = commit.benchmark_results;
+            if (!bench) return null;
+            
+            // Try new transport format first (results.websocket)
+            if (bench.results && bench.results.websocket) {
+                return bench.results.websocket;
+            }
+            
+            // Fall back to old direct format
+            if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                // Check if this is a broken benchmark (no messages received)
+                if (bench.total_messages_received === 0 && bench.avg_latency_ms === 0) {
+                    // This is a broken benchmark
+                    console.warn(`Broken benchmark detected for commit ${commit.commit_short}: no messages received`);
+                    return {
+                        average_latency_ms: 0,
+                        p50_latency_ms: 0,
+                        p95_latency_ms: 0,
+                        p99_latency_ms: 0,
+                        messages_per_second: bench.messages_per_second || 0,
+                        bytes_per_second: 0,
+                        bandwidth_mbps: 0,
+                        is_broken: true
+                    };
+                }
+                
+                // Map old format to new format keys
+                let bytesPerSec = bench.bytes_per_second || 0;
+                if (!bytesPerSec && bench.avg_bandwidth_mbps) {
+                    bytesPerSec = bench.avg_bandwidth_mbps * 125000; // Mbps to bytes/sec
+                } else if (!bytesPerSec && bench.bandwidth_mbps) {
+                    bytesPerSec = bench.bandwidth_mbps * 125000;
+                }
+                
+                return {
+                    average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
+                    p50_latency_ms: bench.p50_latency_ms || 0,
+                    p95_latency_ms: bench.p95_latency_ms || 0,
+                    p99_latency_ms: bench.p99_latency_ms || 0,
+                    messages_per_second: bench.messages_per_second || 0,
+                    bytes_per_second: bytesPerSec,
+                    bandwidth_mbps: bench.bandwidth_mbps || bench.avg_bandwidth_mbps || 0
+                };
+            }
+            
+            return null;
+        }
+        
+        // Test extraction
+        let output = "Testing extractMetrics function:\n\n";
+        
+        output += "Current deployment:\n";
+        const currentMetrics = extractMetrics(deploymentData);
+        output += `  Extracted: ${JSON.stringify(currentMetrics, null, 2)}\n\n`;
+        
+        output += "Historical data:\n";
+        const allCommits = [deploymentData, ...historyData];
+        allCommits.forEach(commit => {
+            const metrics = extractMetrics(commit);
+            output += `  ${commit.commit_short}: `;
+            if (metrics) {
+                output += `latency=${metrics.average_latency_ms}ms, throughput=${metrics.messages_per_second}msg/s`;
+                if (metrics.is_broken) output += " [BROKEN]";
+            } else {
+                output += "NO METRICS";
+            }
+            output += "\n";
+        });
+        
+        // Test chart data generation
+        output += "\nChart data points:\n";
+        const latencyPoints = allCommits.map(c => {
+            const metrics = extractMetrics(c);
+            if (metrics && metrics.is_broken) return null;
+            return metrics ? metrics.average_latency_ms : null;
+        });
+        output += `  Latency: ${JSON.stringify(latencyPoints)}\n`;
+        
+        const throughputPoints = allCommits.map(c => {
+            const metrics = extractMetrics(c);
+            return metrics ? metrics.messages_per_second : null;
+        });
+        output += `  Throughput: ${JSON.stringify(throughputPoints)}\n`;
+        
+        document.getElementById('output').textContent = output;
+    </script>
+</body>
+</html>
