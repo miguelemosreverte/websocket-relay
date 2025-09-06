@@ -136,11 +136,17 @@ jobs:
         }
         EOF
 
-    - name: Upload deployment report
+    - name: Generate Markdown report
+      run: |
+        python3 ${{ github.workspace }}/.github/workflows/generate-markdown-report.py
+        
+    - name: Upload deployment reports
       uses: actions/upload-artifact@v4
       with:
-        name: deployment-report
-        path: deployment-report.json
+        name: deployment-reports
+        path: |
+          deployment-report.json
+          benchmark-report.md
         
   update-status-page:
     needs: deploy
@@ -156,10 +162,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Download deployment report
+    - name: Download deployment reports
       uses: actions/download-artifact@v4
       with:
-        name: deployment-report
+        name: deployment-reports
         
     - name: Update benchmark history
       run: |
@@ -245,6 +251,14 @@ jobs:
     - name: Setup Pages
       uses: actions/configure-pages@v4
       
+    - name: Copy Markdown report to pages
+      run: |
+        # Copy the markdown report to be served alongside HTML
+        if [ -f benchmark-report.md ]; then
+          cp benchmark-report.md index.md
+          echo "Markdown report copied to index.md"
+        fi
+        
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
