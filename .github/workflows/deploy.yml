@@ -62,6 +62,34 @@ jobs:
           exit 1
         fi
 
+    - name: Run functional tests
+      id: functional_tests
+      run: |
+        echo "Installing Go on runner..."
+        
+        echo "Running functional tests..."
+        cd test
+        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" go run functional_test.go
+        cd ..
+        echo "functional_test_status=passed" >> $GITHUB_OUTPUT
+
+    - name: Run benchmark
+      id: benchmark
+      run: |
+        echo "Running 5-second benchmark..."
+        cd test
+        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" \
+          NUM_CLIENTS=20 \
+          OUTPUT_FILE="../benchmark-results.json" \
+          go run benchmark.go
+        cd ..
+        
+        # Read benchmark results
+        BENCHMARK_DATA=$(cat benchmark-results.json)
+        echo "benchmark_data<<EOF" >> $GITHUB_OUTPUT
+        echo "$BENCHMARK_DATA" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Create deployment report
       if: always()
       run: |
@@ -69,6 +97,13 @@ jobs:
         HEALTH_RESPONSE='${{ steps.health_check.outputs.response }}'
         if [ -z "$HEALTH_RESPONSE" ]; then
           HEALTH_RESPONSE='{}'
+        fi
+        
+        # Read benchmark data if it exists
+        if [ -f "benchmark-results.json" ]; then
+          BENCHMARK_RESULTS=$(cat benchmark-results.json)
+        else
+          BENCHMARK_RESULTS='{}'
         fi
         
         cat > deployment-report.json << EOF
@@ -81,6 +116,8 @@ jobs:
           "deployment_status": "${{ steps.health_check.outputs.status || 'failed' }}",
           "service_version": "${{ steps.health_check.outputs.version || 'unknown' }}",
           "health_response": $HEALTH_RESPONSE,
+          "benchmark_results": $BENCHMARK_RESULTS,
+          "functional_test_status": "${{ steps.functional_tests.outputs.functional_test_status || 'skipped' }}",
           "github_actor": "${{ github.actor }}",
           "repository": "${{ github.repository }}"
         }
@@ -100,20 +137,51 @@ jobs:
     permissions:
       pages: write
       id-token: write
+      contents: write
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Download deployment report
       uses: actions/download-artifact@v4
       with:
         name: deployment-report
         
+    - name: Update benchmark history
+      run: |
+        # Create benchmarks directory if it doesn't exist
+        mkdir -p benchmarks
+        
+        # Read current deployment report
+        CURRENT_REPORT=$(cat deployment-report.json)
+        
+        # Initialize history file if it doesn't exist
+        if [ ! -f benchmarks/history.json ]; then
+          echo "[]" > benchmarks/history.json
+        fi
+        
+        # Add current report to history (prepend for newest first)
+        jq ". = [$CURRENT_REPORT] + ." benchmarks/history.json > benchmarks/history.tmp
+        
+        # Keep only last 50 entries to avoid file getting too large
+        jq '.[0:50]' benchmarks/history.tmp > benchmarks/history.json
+        rm benchmarks/history.tmp
+        
+        # Commit the updated history back to repo
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add benchmarks/history.json
+        git diff --staged --quiet || git commit -m "Update benchmark history [skip ci]"
+        git push origin main || true
+        
     - name: Create status page
       run: |
-        # Read deployment report
+        # Read deployment report and history
         DEPLOYMENT_DATA=$(cat deployment-report.json 2>/dev/null || echo '{"deployment_status":"unknown"}')
+        HISTORY_DATA=$(cat benchmarks/history.json 2>/dev/null || echo '[]')
         STATUS=$(echo "$DEPLOYMENT_DATA" | jq -r '.deployment_status')
         
         # Create the HTML with embedded JSON data
@@ -123,7 +191,8 @@ jobs:
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>WebSocket Relay - Deployment Status</title>
+            <title>WebSocket Relay - Performance Dashboard</title>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body {
@@ -262,6 +331,35 @@ jobs:
                 </div>
                 
                 <div class="card">
+                    <h2>📊 Latest Benchmark Results</h2>
+                    <div class="info-grid" id="benchmark-stats">
+                        <div class="info-item">
+                            <div class="info-label">Messages/Second</div>
+                            <div class="info-value" id="msgs-per-sec">-</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Avg Latency</div>
+                            <div class="info-value" id="avg-latency">-</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">P99 Latency</div>
+                            <div class="info-value" id="p99-latency">-</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Bandwidth</div>
+                            <div class="info-value" id="bandwidth">-</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2>📈 Performance History</h2>
+                    <div style="position: relative; height: 300px; max-height: 300px;">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card">
                     <h2>🔍 Health Check Response</h2>
                     <div class="health-response">
                         <pre id="health-response">Loading health data...</pre>
@@ -303,6 +401,7 @@ jobs:
             <script>
                 // Deployment data embedded from GitHub Actions
                 const deploymentData = DEPLOYMENT_DATA_PLACEHOLDER;
+                const historyData = HISTORY_DATA_PLACEHOLDER;
                 
                 // Update page with deployment data
                 function updatePage() {
@@ -338,10 +437,142 @@ jobs:
                     
                     document.getElementById('last-updated').textContent = 
                         new Date().toUTCString();
+                    
+                    // Update benchmark stats if available
+                    if (deploymentData.benchmark_results) {
+                        const bench = deploymentData.benchmark_results;
+                        document.getElementById('msgs-per-sec').textContent = 
+                            bench.messages_per_second ? bench.messages_per_second.toFixed(0) + ' msg/s' : '-';
+                        document.getElementById('avg-latency').textContent = 
+                            bench.avg_latency_ms ? bench.avg_latency_ms.toFixed(2) + ' ms' : '-';
+                        document.getElementById('p99-latency').textContent = 
+                            bench.p99_latency_ms ? bench.p99_latency_ms.toFixed(2) + ' ms' : '-';
+                        document.getElementById('bandwidth').textContent = 
+                            bench.bandwidth_mbps ? bench.bandwidth_mbps.toFixed(2) + ' Mbps' : '-';
+                    }
+                }
+                
+                // Render performance chart
+                function renderChart() {
+                    const ctx = document.getElementById('performanceChart').getContext('2d');
+                    
+                    // Prepare data for chart (last 20 commits)
+                    const chartHistory = historyData.slice(0, 20).reverse();
+                    
+                    const labels = chartHistory.map(h => h.commit_short || 'unknown');
+                    const msgPerSec = chartHistory.map(h => 
+                        h.benchmark_results?.messages_per_second || 0);
+                    const avgLatency = chartHistory.map(h => 
+                        h.benchmark_results?.avg_latency_ms || 0);
+                    const p99Latency = chartHistory.map(h => 
+                        h.benchmark_results?.p99_latency_ms || 0);
+                    const bandwidth = chartHistory.map(h => 
+                        h.benchmark_results?.bandwidth_mbps || 0);
+                    
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Messages/Second',
+                                    data: msgPerSec,
+                                    borderColor: 'rgb(75, 192, 192)',
+                                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                    yAxisID: 'y',
+                                    tension: 0.1
+                                },
+                                {
+                                    label: 'Avg Latency (ms)',
+                                    data: avgLatency,
+                                    borderColor: 'rgb(255, 159, 64)',
+                                    backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                                    yAxisID: 'y1',
+                                    tension: 0.1
+                                },
+                                {
+                                    label: 'P99 Latency (ms)',
+                                    data: p99Latency,
+                                    borderColor: 'rgb(255, 99, 132)',
+                                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                    yAxisID: 'y1',
+                                    tension: 0.1
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Performance Over Time (Last 20 Commits)',
+                                    color: '#e2e8f0'
+                                },
+                                legend: {
+                                    labels: {
+                                        color: '#e2e8f0'
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        color: '#94a3b8'
+                                    },
+                                    grid: {
+                                        color: 'rgba(148, 163, 184, 0.1)'
+                                    }
+                                },
+                                y: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'Messages/Second',
+                                        color: '#94a3b8'
+                                    },
+                                    ticks: {
+                                        color: '#94a3b8'
+                                    },
+                                    grid: {
+                                        color: 'rgba(148, 163, 184, 0.1)'
+                                    }
+                                },
+                                y1: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'right',
+                                    title: {
+                                        display: true,
+                                        text: 'Latency (ms)',
+                                        color: '#94a3b8'
+                                    },
+                                    ticks: {
+                                        color: '#94a3b8'
+                                    },
+                                    grid: {
+                                        drawOnChartArea: false,
+                                        color: 'rgba(148, 163, 184, 0.1)'
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
                 
                 // Update page on load
                 updatePage();
+                
+                // Render chart if we have history
+                if (historyData && historyData.length > 0) {
+                    renderChart();
+                }
                 
                 // Live health check (optional)
                 async function checkHealth() {
@@ -365,8 +596,9 @@ jobs:
         EOF
         
         # Replace placeholders with actual data
-        # Write JSON to a file to avoid escaping issues
+        # Write JSON to files to avoid escaping issues
         echo "$DEPLOYMENT_DATA" > deployment.json
+        echo "$HISTORY_DATA" > history.json
         
         # Use Python to safely replace the placeholders
         python3 << 'PYTHON'
@@ -376,12 +608,17 @@ jobs:
         with open('deployment.json', 'r') as f:
             deployment_data = f.read().strip()
         
+        # Read the history data
+        with open('history.json', 'r') as f:
+            history_data = f.read().strip()
+        
         # Read the HTML template
         with open('index.html', 'r') as f:
             html = f.read()
         
         # Replace placeholders
         html = html.replace('DEPLOYMENT_DATA_PLACEHOLDER', deployment_data)
+        html = html.replace('HISTORY_DATA_PLACEHOLDER', history_data)
         html = html.replace('SERVER_IP_PLACEHOLDER', '${{ secrets.SERVER_IP }}')
         html = html.replace('GITHUB_REPOSITORY_PLACEHOLDER', '${{ github.repository }}')
         
