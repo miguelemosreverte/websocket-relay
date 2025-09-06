@@ -213,9 +213,9 @@
         <div class="card">
             <h2>📈 Historical Performance</h2>
             <div class="tab-buttons">
-                <button class="tab-button active" onclick="showHistoryView('latency')">Latency Trends</button>
-                <button class="tab-button" onclick="showHistoryView('throughput')">Throughput Trends</button>
-                <button class="tab-button" onclick="showHistoryView('comparison')">Transport Comparison</button>
+                <button class="tab-button active" onclick="showHistoryView('latency', this)">Latency Trends</button>
+                <button class="tab-button" onclick="showHistoryView('throughput', this)">Throughput Trends</button>
+                <button class="tab-button" onclick="showHistoryView('comparison', this)">Transport Comparison</button>
             </div>
             <div class="chart-container">
                 <canvas id="historyChart"></canvas>
@@ -521,12 +521,24 @@
 
         let historyChart = null;
         
-        function showHistoryView(view) {
+        function showHistoryView(view, buttonElement) {
             // Update active button
             document.querySelectorAll('.tab-button').forEach(btn => {
                 btn.classList.remove('active');
             });
-            event.target.classList.add('active');
+            
+            // If called from button click, use the button element
+            // If called programmatically, find the button by view name
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            } else {
+                const buttons = document.querySelectorAll('.tab-button');
+                buttons.forEach(btn => {
+                    if (btn.textContent.toLowerCase().includes(view)) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
 
             // Destroy existing chart
             if (historyChart) {
@@ -758,7 +770,7 @@
             renderTransportComparison();
             renderComparisonChart();
             renderLatencyChart();
-            showHistoryView('latency');
+            showHistoryView('latency', null);  // Pass null for programmatic call
             renderTestConfig();
             fetchLiveStatus();
             
