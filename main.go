@@ -13,7 +13,7 @@ var (
 	startTime   = time.Now()
 	commitHash  = os.Getenv("COMMIT_HASH")
 	buildTime   = os.Getenv("BUILD_TIME")
-	version     = "1.2.0"
+	version     = "2.0.0"
 )
 
 type HealthResponse struct {
@@ -67,6 +67,8 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "\n📍 Available Endpoints:\n")
 	fmt.Fprintf(w, "  GET /health - Health check endpoint (JSON)\n")
+	fmt.Fprintf(w, "  GET /stats  - WebSocket relay statistics (JSON)\n")
+	fmt.Fprintf(w, "  WS  /ws     - WebSocket endpoint (?name=NAME&room=ROOM)\n")
 	fmt.Fprintf(w, "  GET /       - This page\n")
 	fmt.Fprintf(w, "\n✨ Server Status: RUNNING\n")
 	fmt.Fprintf(w, "🌐 Host: %s\n", r.Host)
@@ -78,11 +80,25 @@ func main() {
 		port = "8080"
 	}
 	
+	// Create and start the WebSocket hub
+	hub := NewHub()
+	go hub.Run()
+	
+	// HTTP handlers
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/", rootHandler)
+	http.HandleFunc("/ws", HandleWebSocket(hub))
+	
+	// Stats endpoint for the WebSocket relay
+	http.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		stats := hub.GetStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+	})
 	
 	log.Printf("WebSocket Relay Server starting on port %s", port)
 	log.Printf("Version: %s", version)
+	log.Printf("WebSocket endpoint: ws://localhost:%s/ws", port)
 	if commitHash != "" {
 		log.Printf("Commit: %s", commitHash)
 	}
