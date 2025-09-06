@@ -13,7 +13,7 @@ var (
 	startTime   = time.Now()
 	commitHash  = os.Getenv("COMMIT_HASH")
 	buildTime   = os.Getenv("BUILD_TIME")
-	version     = "1.0.0"
+	version     = "1.1.0"
 )
 
 type HealthResponse struct {
@@ -45,14 +45,29 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "WebSocket Relay Server v%s\n", version)
-	fmt.Fprintf(w, "Uptime: %s\n", time.Since(startTime).Round(time.Second))
+	banner := `
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║  ╦ ╦┌─┐┌┐ ╔═╗┌─┐┌─┐┬┌─┌─┐┌┬┐  ╦═╗┌─┐┬  ┌─┐┬ ┬          ║
+║  ║║║├┤ ├┴┐╚═╗│ ││  ├┴┐├┤  │   ╠╦╝├┤ │  ├─┤└┬┘          ║
+║  ╚╩╝└─┘└─┘╚═╝└─┘└─┘┴ ┴└─┘ ┴   ╩╚═└─┘┴─┘┴ ┴ ┴           ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+`
+	fmt.Fprint(w, banner)
+	fmt.Fprintf(w, "\n🚀 WebSocket Relay Server v%s\n", version)
+	fmt.Fprintf(w, "⏱️  Uptime: %s\n", time.Since(startTime).Round(time.Second))
 	if commitHash != "" {
-		fmt.Fprintf(w, "Commit: %s\n", commitHash)
+		fmt.Fprintf(w, "📦 Commit: %s\n", commitHash)
 	}
-	fmt.Fprintf(w, "\nEndpoints:\n")
-	fmt.Fprintf(w, "  GET /health - Health check endpoint\n")
+	if buildTime != "" {
+		fmt.Fprintf(w, "🔨 Built: %s\n", buildTime)
+	}
+	fmt.Fprintf(w, "\n📍 Available Endpoints:\n")
+	fmt.Fprintf(w, "  GET /health - Health check endpoint (JSON)\n")
 	fmt.Fprintf(w, "  GET /       - This page\n")
+	fmt.Fprintf(w, "\n✨ Server Status: RUNNING\n")
+	fmt.Fprintf(w, "🌐 Host: %s\n", r.Host)
 }
 
 func main() {
