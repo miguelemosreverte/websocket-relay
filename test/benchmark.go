@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -71,14 +72,30 @@ func createBenchmarkClient(id int, serverURL string) (*BenchmarkClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	u.Scheme = "ws"
+	
+	// Handle HTTPS -> WSS conversion
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
 	u.Path = "/ws"
 	q := u.Query()
 	q.Set("name", fmt.Sprintf("bench-%d", id))
 	q.Set("room", "benchmark")
 	u.RawQuery = q.Encode()
 
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	// Create dialer with TLS config if needed
+	dialer := websocket.DefaultDialer
+	if os.Getenv("SKIP_TLS_VERIFY") == "true" && u.Scheme == "wss" {
+		dialer = &websocket.Dialer{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
+	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		return nil, err
 	}

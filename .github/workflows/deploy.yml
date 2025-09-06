@@ -24,7 +24,7 @@ jobs:
       run: |
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           -i ~/.ssh/id_ed25519 \
-          scripts/deploy.sh \
+          scripts/deploy-with-https.sh \
           ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:/root/deploy-websocket-relay.sh
 
     - name: Deploy to server
@@ -42,7 +42,8 @@ jobs:
         sleep 5
         
         echo "Testing health endpoint..."
-        RESPONSE=$(curl -s http://${{ secrets.SERVER_IP }}:8080/health)
+        # Try HTTPS first with self-signed cert
+        RESPONSE=$(curl -k -s https://${{ secrets.SERVER_IP }}/health || curl -s http://${{ secrets.SERVER_IP }}:8080/health)
         echo "Health response: $RESPONSE"
         
         # Parse JSON response
@@ -69,7 +70,7 @@ jobs:
         
         echo "Running functional tests..."
         cd test
-        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" go run functional.go
+        SERVER_URL="https://${{ secrets.SERVER_IP }}" SKIP_TLS_VERIFY=true go run functional.go
         cd ..
         echo "functional_test_status=passed" >> $GITHUB_OUTPUT
 
@@ -78,7 +79,8 @@ jobs:
       run: |
         echo "Running 5-second benchmark..."
         cd test
-        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" \
+        SERVER_URL="https://${{ secrets.SERVER_IP }}" \
+          SKIP_TLS_VERIFY=true \
           NUM_CLIENTS=20 \
           OUTPUT_FILE="../benchmark-results.json" \
           go run benchmark.go
@@ -577,7 +579,7 @@ jobs:
                 // Live health check (optional)
                 async function checkHealth() {
                     try {
-                        const response = await fetch('http://SERVER_IP_PLACEHOLDER:8080/health');
+                        const response = await fetch('https://SERVER_IP_PLACEHOLDER/health');
                         if (response.ok) {
                             const data = await response.json();
                             document.getElementById('health-response').textContent = 
