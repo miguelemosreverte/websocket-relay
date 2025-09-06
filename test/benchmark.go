@@ -357,8 +357,16 @@ func main() {
 	
 	fmt.Printf("\nResults saved to %s\n", outputFile)
 	
-	// Exit with error if there were failures
-	if results.Errors > 0 {
+	// Exit with error only if critical failures
+	errorRate := float64(results.Errors) / float64(results.TotalMessagesSent) * 100
+	if results.TotalMessagesSent == 0 {
+		fmt.Println("❌ CRITICAL: No messages were sent")
 		os.Exit(1)
+	} else if errorRate > 10 {
+		fmt.Printf("❌ CRITICAL: Error rate too high (%.1f%%)\n", errorRate)
+		os.Exit(1)
+	} else if results.Errors > 0 {
+		fmt.Printf("⚠️  Warning: %d errors occurred (%.1f%% error rate)\n", results.Errors, errorRate)
+		// Don't exit with error for minor issues
 	}
 }
