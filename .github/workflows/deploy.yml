@@ -65,16 +65,22 @@ jobs:
     - name: Create deployment report
       if: always()
       run: |
+        COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+        HEALTH_RESPONSE='${{ steps.health_check.outputs.response }}'
+        if [ -z "$HEALTH_RESPONSE" ]; then
+          HEALTH_RESPONSE='{}'
+        fi
+        
         cat > deployment-report.json << EOF
         {
           "timestamp": "$(date -u +"%Y-%m-%d %H:%M:%S UTC")",
           "commit": "${{ github.sha }}",
-          "commit_short": "${{ github.sha }}" | cut -c1-7,
+          "commit_short": "$COMMIT_SHORT",
           "branch": "${{ github.ref_name }}",
           "workflow_run": "${{ github.run_number }}",
           "deployment_status": "${{ steps.health_check.outputs.status || 'failed' }}",
           "service_version": "${{ steps.health_check.outputs.version || 'unknown' }}",
-          "health_response": ${{ steps.health_check.outputs.response || '{}' }},
+          "health_response": $HEALTH_RESPONSE,
           "github_actor": "${{ github.actor }}",
           "repository": "${{ github.repository }}"
         }
