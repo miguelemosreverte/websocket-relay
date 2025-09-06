@@ -776,15 +776,39 @@
                 
                 // Fall back to old direct format
                 if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                    // Check if this is a broken benchmark (no messages received)
+                    if (bench.total_messages_received === 0 && bench.avg_latency_ms === 0) {
+                        // This is a broken benchmark, return null or minimal data
+                        console.warn(`Broken benchmark detected for commit ${commit.commit_short}: no messages received`);
+                        return {
+                            average_latency_ms: 0,
+                            p50_latency_ms: 0,
+                            p95_latency_ms: 0,
+                            p99_latency_ms: 0,
+                            messages_per_second: bench.messages_per_second || 0,
+                            bytes_per_second: 0,
+                            bandwidth_mbps: 0,
+                            is_broken: true
+                        };
+                    }
+                    
                     // Map old format to new format keys
+                    // For bandwidth, convert from Mbps to bytes/sec if needed
+                    let bytesPerSec = bench.bytes_per_second || 0;
+                    if (!bytesPerSec && bench.avg_bandwidth_mbps) {
+                        bytesPerSec = bench.avg_bandwidth_mbps * 125000; // Mbps to bytes/sec
+                    } else if (!bytesPerSec && bench.peak_bandwidth_mbps) {
+                        bytesPerSec = bench.peak_bandwidth_mbps * 125000;
+                    }
+                    
                     return {
                         average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
                         p50_latency_ms: bench.p50_latency_ms || 0,
                         p95_latency_ms: bench.p95_latency_ms || 0,
                         p99_latency_ms: bench.p99_latency_ms || 0,
                         messages_per_second: bench.messages_per_second || 0,
-                        bytes_per_second: bench.bytes_per_second || (bench.bandwidth_mbps ? bench.bandwidth_mbps * 125000 : 0),
-                        bandwidth_mbps: bench.bandwidth_mbps || 0
+                        bytes_per_second: bytesPerSec,
+                        bandwidth_mbps: bench.bandwidth_mbps || bench.avg_bandwidth_mbps || bench.peak_bandwidth_mbps || 0
                     };
                 }
                 
@@ -797,23 +821,28 @@
                         label: 'Average Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.average_latency_ms || 0) : 0;
+                            // Don't plot zero values from broken benchmarks
+                            if (metrics && metrics.is_broken) return null;
+                            return metrics ? (metrics.average_latency_ms || 0) : null;
                         }),
                         borderColor: chartColors.blue,
                         backgroundColor: chartColors.blue + '20',
                         borderWidth: 2,
-                        tension: 0.3
+                        tension: 0.3,
+                        spanGaps: true // Connect non-null points
                     },
                     {
                         label: 'P99 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p99_latency_ms || 0) : 0;
+                            if (metrics && metrics.is_broken) return null;
+                            return metrics ? (metrics.p99_latency_ms || 0) : null;
                         }),
                         borderColor: chartColors.red,
                         backgroundColor: chartColors.red + '20',
                         borderWidth: 2,
-                        tension: 0.3
+                        tension: 0.3,
+                        spanGaps: true
                     }
                 ];
                 
@@ -872,10 +901,13 @@
                             const metrics = extractMetrics(c);
                             if (!metrics) return 0;
                             
+                            // Skip broken benchmarks
+                            if (metrics.is_broken) return 0;
+                            
                             // Try bytes_per_second first, then bandwidth_mbps
-                            if (metrics.bytes_per_second) {
+                            if (metrics.bytes_per_second && metrics.bytes_per_second > 0) {
                                 return metrics.bytes_per_second / 1024 / 1024;
-                            } else if (metrics.bandwidth_mbps) {
+                            } else if (metrics.bandwidth_mbps && metrics.bandwidth_mbps > 0) {
                                 return metrics.bandwidth_mbps / 8; // Convert Mbps to MB/s
                             }
                             return 0;
@@ -933,12 +965,14 @@
                         label: 'P99 Latency (ms)',
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
-                            return metrics ? (metrics.p99_latency_ms || 0) : 0;
+                            if (metrics && metrics.is_broken) return null;
+                            return metrics ? (metrics.p99_latency_ms || 0) : null;
                         }),
                         borderColor: chartColors.red,
                         backgroundColor: chartColors.red + '20',
                         borderWidth: 2,
-                        tension: 0.3
+                        tension: 0.3,
+                        spanGaps: true
                     }
                 ];
             }
