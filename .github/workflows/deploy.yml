@@ -33,7 +33,7 @@ jobs:
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
           -i ~/.ssh/id_ed25519 \
           ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} \
-          "chmod +x /root/deploy-websocket-relay.sh && /root/deploy-websocket-relay.sh"
+          "chmod +x /root/deploy-websocket-relay.sh && DOMAIN='${{ secrets.DOMAIN }}' /root/deploy-websocket-relay.sh"
         
     - name: Test health endpoint from GitHub
       id: health_check
@@ -42,8 +42,12 @@ jobs:
         sleep 5
         
         echo "Testing health endpoint..."
-        # Try HTTPS first with self-signed cert
-        RESPONSE=$(curl -k -s https://${{ secrets.SERVER_IP }}/health || curl -s http://${{ secrets.SERVER_IP }}:8080/health)
+        # Try domain first if available, then IP
+        if [ -n "${{ secrets.DOMAIN }}" ]; then
+          RESPONSE=$(curl -s https://${{ secrets.DOMAIN }}/health || curl -k -s https://${{ secrets.SERVER_IP }}/health)
+        else
+          RESPONSE=$(curl -k -s https://${{ secrets.SERVER_IP }}/health)
+        fi
         echo "Health response: $RESPONSE"
         
         # Parse JSON response
@@ -70,7 +74,11 @@ jobs:
         
         echo "Running functional tests..."
         cd test
-        SERVER_URL="https://${{ secrets.SERVER_IP }}" SKIP_TLS_VERIFY=true go run functional.go
+        if [ -n "${{ secrets.DOMAIN }}" ]; then
+          SERVER_URL="https://${{ secrets.DOMAIN }}" go run functional.go
+        else
+          SERVER_URL="https://${{ secrets.SERVER_IP }}" SKIP_TLS_VERIFY=true go run functional.go
+        fi
         cd ..
         echo "functional_test_status=passed" >> $GITHUB_OUTPUT
 
@@ -79,11 +87,18 @@ jobs:
       run: |
         echo "Running 5-second benchmark..."
         cd test
-        SERVER_URL="https://${{ secrets.SERVER_IP }}" \
-          SKIP_TLS_VERIFY=true \
-          NUM_CLIENTS=20 \
-          OUTPUT_FILE="../benchmark-results.json" \
-          go run benchmark.go
+        if [ -n "${{ secrets.DOMAIN }}" ]; then
+          SERVER_URL="https://${{ secrets.DOMAIN }}" \
+            NUM_CLIENTS=20 \
+            OUTPUT_FILE="../benchmark-results.json" \
+            go run benchmark.go
+        else
+          SERVER_URL="https://${{ secrets.SERVER_IP }}" \
+            SKIP_TLS_VERIFY=true \
+            NUM_CLIENTS=20 \
+            OUTPUT_FILE="../benchmark-results.json" \
+            go run benchmark.go
+        fi
         cd ..
         
         # Read benchmark results
@@ -372,12 +387,12 @@ jobs:
                     <h2>🔗 Quick Links</h2>
                     <div class="info-grid">
                         <div class="info-item">
-                            <a href="http://SERVER_IP_PLACEHOLDER:8080/" target="_blank">
+                            <a href="SERVICE_URL_PLACEHOLDER" target="_blank">
                                 View Live Service →
                             </a>
                         </div>
                         <div class="info-item">
-                            <a href="http://SERVER_IP_PLACEHOLDER:8080/health" target="_blank">
+                            <a href="SERVICE_URL_PLACEHOLDER/health" target="_blank">
                                 Health Endpoint →
                             </a>
                         </div>
@@ -579,7 +594,7 @@ jobs:
                 // Live health check (optional)
                 async function checkHealth() {
                     try {
-                        const response = await fetch('https://SERVER_IP_PLACEHOLDER/health');
+                        const response = await fetch('SERVICE_URL_PLACEHOLDER/health');
                         if (response.ok) {
                             const data = await response.json();
                             document.getElementById('health-response').textContent = 
@@ -621,8 +636,20 @@ jobs:
         # Replace placeholders
         html = html.replace('DEPLOYMENT_DATA_PLACEHOLDER', deployment_data)
         html = html.replace('HISTORY_DATA_PLACEHOLDER', history_data)
+        
+        # Use domain if available, otherwise use IP with HTTPS
+        domain = '${{ secrets.DOMAIN }}'
+        if domain and domain != '':
+            service_url = f'https://{domain}'
+        else:
+            service_url = 'https://${{ secrets.SERVER_IP }}'
+        
+        html = html.replace('SERVICE_URL_PLACEHOLDER', service_url)
         html = html.replace('SERVER_IP_PLACEHOLDER', '${{ secrets.SERVER_IP }}')
         html = html.replace('GITHUB_REPOSITORY_PLACEHOLDER', '${{ github.repository }}')
+        
+        # Make sure to replace all occurrences of SERVICE_URL_PLACEHOLDER in JavaScript too
+        html = html.replace("'SERVICE_URL_PLACEHOLDER", f"'{service_url}")
         
         # Write the final HTML
         with open('index.html', 'w') as f:

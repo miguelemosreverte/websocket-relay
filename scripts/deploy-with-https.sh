@@ -9,7 +9,7 @@ BINARY_NAME="websocket-relay"
 LOG_FILE="/root/${SERVICE_NAME}.log"
 PID_FILE="/root/${SERVICE_NAME}.pid"
 PORT=8080
-DOMAIN="${DOMAIN:-relay.websocket-demo.com}"
+DOMAIN="${DOMAIN:-}"  # Domain will be passed as environment variable
 SERVER_IP="95.217.238.72"
 
 echo "=== HTTPS Deployment started at $(date) ==="
@@ -83,8 +83,10 @@ echo "Service started with PID: $NEW_PID"
 
 # Configure Caddy
 echo "Configuring Caddy..."
-cat > /etc/caddy/Caddyfile << EOF
-# Serve with domain name if available
+if [ -n "$DOMAIN" ]; then
+    echo "Configuring Caddy with domain: $DOMAIN"
+    cat > /etc/caddy/Caddyfile << EOF
+# Serve with Let's Encrypt certificate for domain
 ${DOMAIN} {
     reverse_proxy localhost:${PORT}
     
@@ -103,6 +105,7 @@ ${DOMAIN} {
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         X-XSS-Protection "1; mode=block"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
         -Server
     }
     
@@ -113,7 +116,12 @@ ${DOMAIN} {
     }
 }
 
-# Also serve on IP with self-signed cert
+# Redirect www to non-www if applicable
+www.${DOMAIN} {
+    redir https://${DOMAIN}{uri} permanent
+}
+
+# Also serve on IP with self-signed cert for direct access
 ${SERVER_IP} {
     tls internal
     reverse_proxy localhost:${PORT}
@@ -124,12 +132,39 @@ ${SERVER_IP} {
     }
     reverse_proxy @websocket localhost:${PORT}
 }
+EOF
+else
+    echo "No domain configured, using IP only with self-signed cert"
+    cat > /etc/caddy/Caddyfile << EOF
+# Serve on IP with self-signed cert
+${SERVER_IP} {
+    tls internal
+    reverse_proxy localhost:${PORT}
+    
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket localhost:${PORT}
+    
+    # Enable compression
+    encode gzip
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        -Server
+    }
+}
 
-# Redirect HTTP to HTTPS on standard ports
+# Redirect HTTP to HTTPS
 :80 {
     redir https://{host}{uri} permanent
 }
 EOF
+fi
 
 # Create log directory if it doesn't exist
 mkdir -p /var/log/caddy
@@ -158,12 +193,34 @@ fi
 
 # Test HTTPS endpoint
 echo "Testing HTTPS endpoint..."
+if [ -n "$DOMAIN" ]; then
+    # Test domain with Let's Encrypt cert
+    echo "Testing https://${DOMAIN}/health"
+    HTTPS_CHECK=$(curl -s -o /dev/null -w "%{http_code}" https://${DOMAIN}/health || echo "000")
+    
+    if [ "$HTTPS_CHECK" = "200" ]; then
+        echo "✅ HTTPS health check passed with Let's Encrypt!"
+        echo "Service is available at:"
+        echo "  - https://${DOMAIN}/ (with Let's Encrypt cert)"
+        echo "  - https://${SERVER_IP}/ (with self-signed cert)"
+        curl -s https://${DOMAIN}/health | jq '.' || curl -s https://${DOMAIN}/health
+        echo "=== HTTPS Deployment completed successfully at $(date) ==="
+        exit 0
+    else
+        echo "⚠️  Domain HTTPS check returned: $HTTPS_CHECK"
+        echo "Let's Encrypt may still be provisioning the certificate..."
+    fi
+fi
+
+# Test IP with self-signed cert
 HTTPS_CHECK=$(curl -k -s -o /dev/null -w "%{http_code}" https://${SERVER_IP}/health || echo "000")
 
 if [ "$HTTPS_CHECK" = "200" ]; then
-    echo "✅ HTTPS health check passed!"
+    echo "✅ HTTPS health check passed on IP!"
     echo "Service is available at:"
-    echo "  - https://${DOMAIN}/ (with Let's Encrypt cert)"
+    if [ -n "$DOMAIN" ]; then
+        echo "  - https://${DOMAIN}/ (Let's Encrypt cert may be provisioning)"
+    fi
     echo "  - https://${SERVER_IP}/ (with self-signed cert)"
     echo "=== HTTPS Deployment completed successfully at $(date) ==="
     exit 0
