@@ -9,6 +9,7 @@ BINARY_NAME="websocket-relay"
 LOG_FILE="/root/${SERVICE_NAME}.log"
 PID_FILE="/root/${SERVICE_NAME}.pid"
 PORT=8080
+UDP_PORT=8081
 DOMAIN="${DOMAIN:-}"  # Domain will be passed as environment variable
 SERVER_IP="95.217.238.72"
 
@@ -44,9 +45,9 @@ BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 echo "Building version: $COMMIT_HASH"
 
-# Build the Go binary
-echo "Building Go binary..."
-COMMIT_HASH="$COMMIT_HASH" BUILD_TIME="$BUILD_TIME" go build -ldflags="-s -w" -o "$BINARY_NAME" main.go websocket.go
+# Build the Go binary with UDP support
+echo "Building Go binary with UDP support..."
+COMMIT_HASH="$COMMIT_HASH" BUILD_TIME="$BUILD_TIME" go build -ldflags="-s -w" -o "$BINARY_NAME" main.go websocket.go udp-relay.go
 
 # Stop existing service if running
 if [ -f "$PID_FILE" ]; then
@@ -70,9 +71,10 @@ if [ ! -z "$PORT_PID" ]; then
     sleep 2
 fi
 
-# Start the new service
-echo "Starting new service..."
+# Start the new service with UDP support
+echo "Starting new service with UDP support..."
 export PORT=$PORT
+export UDP_PORT=$UDP_PORT
 export COMMIT_HASH="$COMMIT_HASH"
 export BUILD_TIME="$BUILD_TIME"
 nohup ./"$BINARY_NAME" > "$LOG_FILE" 2>&1 &
@@ -80,6 +82,16 @@ NEW_PID=$!
 echo $NEW_PID > "$PID_FILE"
 
 echo "Service started with PID: $NEW_PID"
+
+# Configure firewall for UDP port
+echo "Configuring firewall for UDP port $UDP_PORT..."
+if command -v ufw &> /dev/null; then
+    ufw allow $UDP_PORT/udp
+    echo "UDP port $UDP_PORT opened in UFW"
+elif command -v iptables &> /dev/null; then
+    iptables -A INPUT -p udp --dport $UDP_PORT -j ACCEPT
+    echo "UDP port $UDP_PORT opened in iptables"
+fi
 
 # Configure Caddy
 echo "Configuring Caddy..."
@@ -217,10 +229,11 @@ if [ -n "$DOMAIN" ]; then
     if [ "$HTTPS_CHECK" = "200" ]; then
         echo "✅ HTTPS health check passed with Let's Encrypt!"
         echo "Service is available at:"
-        echo "  - https://${DOMAIN}/ (with Let's Encrypt cert)"
-        echo "  - https://${SERVER_IP}/ (with self-signed cert)"
+        echo "  - WebSocket: wss://${DOMAIN}/ws (with Let's Encrypt cert)"
+        echo "  - WebSocket: wss://${SERVER_IP}/ws (with self-signed cert)"
+        echo "  - UDP: ${SERVER_IP}:${UDP_PORT}"
         curl -s https://${DOMAIN}/health | jq '.' || curl -s https://${DOMAIN}/health
-        echo "=== HTTPS Deployment completed successfully at $(date) ==="
+        echo "=== HTTPS Deployment with UDP support completed successfully at $(date) ==="
         exit 0
     else
         echo "⚠️  Domain HTTPS check returned: $HTTPS_CHECK"

@@ -82,21 +82,24 @@ jobs:
     - name: Run benchmark
       id: benchmark
       run: |
-        echo "Running 5-second benchmark..."
+        echo "Running 5-second transport benchmark..."
         cd test
         if [ -n "${{ secrets.DOMAIN }}" ]; then
-          SERVER_URL="https://${{ secrets.DOMAIN }}" \
-            NUM_CLIENTS=50 \
-            DURATION=5s \
-            OUTPUT_FILE="../benchmark-results.json" \
-            go run benchmark-enhanced.go
+          go run benchmark-transport.go \
+            -server "https://${{ secrets.DOMAIN }}" \
+            -clients 50 \
+            -duration 5s \
+            -transport both \
+            -output "../benchmark-results.json"
         else
           SERVER_URL="https://${{ secrets.SERVER_IP }}" \
-            SKIP_TLS_VERIFY=true \
-            NUM_CLIENTS=50 \
-            DURATION=5s \
-            OUTPUT_FILE="../benchmark-results.json" \
-            go run benchmark-enhanced.go
+          SKIP_TLS_VERIFY=true \
+          go run benchmark-transport.go \
+            -server "https://${{ secrets.SERVER_IP }}" \
+            -clients 50 \
+            -duration 5s \
+            -transport both \
+            -output "../benchmark-results.json"
         fi
         cd ..
         

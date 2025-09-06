@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -100,6 +101,9 @@ var (
 	metricsMutex     sync.RWMutex
 	latencyWindow    []float64
 	lastSnapshot     MetricSnapshot
+	
+	// Track sent messages for latency calculation
+	sentMessages     sync.Map // map[string]int64 - message identifier -> send timestamp
 )
 
 func createBenchmarkClient(id int, serverURL string) (*BenchmarkClient, error) {
@@ -173,15 +177,22 @@ func (c *BenchmarkClient) startReading() {
 			atomic.AddInt64(&c.Stats.MessagesReceived, 1)
 			atomic.AddInt64(&c.Stats.BytesReceived, int64(len(message)))
 
-			// Calculate latency if this is an echo of our message
-			if msg.ClientID == c.ID && msg.Timestamp > 0 {
-				latency := float64(time.Now().UnixNano()-msg.Timestamp) / 1e6 // Convert to ms
-				c.Stats.mu.Lock()
-				c.Stats.Latencies = append(c.Stats.Latencies, latency)
-				
-				// Add to global latency window
-				metricsMutex.Lock()
-				latencyWindow = append(latencyWindow, latency)
+			// Calculate latency by matching received messages to sent ones
+			// The relay broadcasts messages with the sender's name
+			if msg.Name == fmt.Sprintf("bench-%d", c.ID) {
+				// This is one of our messages echoed back
+				msgKey := fmt.Sprintf("%s:%s", msg.Name, msg.Content)
+				if sendTimeVal, ok := sentMessages.LoadAndDelete(msgKey); ok {
+					sendTime := sendTimeVal.(int64)
+					latency := float64(time.Now().UnixNano()-sendTime) / 1e6 // Convert to ms
+					
+					c.Stats.mu.Lock()
+					c.Stats.Latencies = append(c.Stats.Latencies, latency)
+					c.Stats.mu.Unlock()
+					
+					// Add to global latency window
+					metricsMutex.Lock()
+					latencyWindow = append(latencyWindow, latency)
 				// Keep only last 1000 latencies for rolling window
 				if len(latencyWindow) > 1000 {
 					latencyWindow = latencyWindow[1:]
@@ -214,14 +225,21 @@ func (c *BenchmarkClient) startSending(duration time.Duration, messagesPerSecond
 				return
 			case <-ticker.C:
 				seq := atomic.AddInt64(&messageSequence, 1)
+				msgContent := fmt.Sprintf("Msg %d from client %d", seq, c.ID)
+				sendTime := time.Now().UnixNano()
+				
 				msg := BenchmarkMessage{
 					Type:      "message",
 					ClientID:  c.ID,
 					Sequence:  seq,
-					Timestamp: time.Now().UnixNano(),
-					Content:   fmt.Sprintf("Msg %d from client %d", seq, c.ID),
+					Timestamp: sendTime,
+					Content:   msgContent,
 					Payload:   payload,
 				}
+				
+				// Store send timestamp for latency calculation
+				msgKey := fmt.Sprintf("bench-%d:%s", c.ID, msgContent)
+				sentMessages.Store(msgKey, sendTime)
 				
 				data, err := json.Marshal(msg)
 				if err != nil {
