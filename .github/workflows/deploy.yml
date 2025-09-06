@@ -117,7 +117,7 @@ jobs:
         STATUS=$(echo "$DEPLOYMENT_DATA" | jq -r '.deployment_status')
         
         # Create the HTML with embedded JSON data
-        cat > index.html << 'HTMLEOF'
+        cat > index.html << 'EOF'
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -362,7 +362,7 @@ jobs:
             </script>
         </body>
         </html>
-HTMLEOF
+        EOF
         
         # Replace placeholders with actual data
         # First, save the template
