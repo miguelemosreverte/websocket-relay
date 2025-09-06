@@ -127,7 +127,10 @@ jobs:
           STATUS_TEXT="Deployment Failed"
         fi
         
-        cat > index.html << 'EOF'
+        # Export for use in heredoc
+        export DEPLOYMENT_DATA
+        
+        cat > index.html << EOF
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -312,7 +315,7 @@ jobs:
             
             <script>
                 // Deployment data embedded from GitHub Actions
-                const deploymentData = $DEPLOYMENT_DATA;
+                const deploymentData = ${DEPLOYMENT_DATA};
                 
                 // Update page with deployment data
                 function updatePage() {
