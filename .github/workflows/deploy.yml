@@ -3,23 +3,20 @@ name: Deploy and Test
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
+      
     - name: Setup SSH
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
         chmod 600 ~/.ssh/id_ed25519
-        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
-
+        
     - name: Copy deployment script to server
       run: |
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -113,56 +110,45 @@ jobs:
       if: always()
       run: |
         COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-        HEALTH_RESPONSE='${{ steps.health_check.outputs.response }}'
-        if [ -z "$HEALTH_RESPONSE" ]; then
-          HEALTH_RESPONSE='{}'
-        fi
         
-        # Read benchmark data if it exists
-        if [ -f "benchmark-results.json" ]; then
-          BENCHMARK_RESULTS=$(cat benchmark-results.json)
-        else
-          BENCHMARK_RESULTS='{}'
-        fi
-        
+        # Create deployment report
         cat > deployment-report.json << EOF
         {
-          "timestamp": "$(date -u +"%Y-%m-%d %H:%M:%S UTC")",
+          "deployment_status": "${{ steps.deploy.outcome }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
           "commit": "${{ github.sha }}",
           "commit_short": "$COMMIT_SHORT",
-          "branch": "${{ github.ref_name }}",
-          "workflow_run": "${{ github.run_number }}",
-          "deployment_status": "${{ steps.health_check.outputs.status || 'failed' }}",
-          "service_version": "${{ steps.health_check.outputs.version || 'unknown' }}",
-          "health_response": $HEALTH_RESPONSE,
-          "benchmark_results": $BENCHMARK_RESULTS,
-          "functional_test_status": "${{ steps.functional_tests.outputs.functional_test_status || 'skipped' }}",
-          "github_actor": "${{ github.actor }}",
+          "commit_message": "${{ github.event.head_commit.message }}",
+          "service_version": "${{ steps.health_check.outputs.version }}",
+          "health_status": "${{ steps.health_check.outputs.status }}",
+          "health_response": ${{ steps.health_check.outputs.response || 'null' }},
+          "functional_test_status": "${{ steps.functional_tests.outputs.functional_test_status }}",
+          "benchmark_results": ${{ steps.benchmark.outputs.benchmark_data || 'null' }},
+          "github_run_id": "${{ github.run_id }}",
+          "github_run_number": "${{ github.run_number }}",
           "repository": "${{ github.repository }}"
         }
         EOF
 
     - name: Upload deployment report
-      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: deployment-report
         path: deployment-report.json
-
+        
   update-status-page:
     needs: deploy
-    if: always()
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
-      contents: write
-    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Download deployment report
       uses: actions/download-artifact@v4
@@ -205,416 +191,6 @@ jobs:
         
         # Copy enhanced dashboard template
         cp ${{ github.workspace }}/.github/workflows/enhanced-dashboard.html index.html
-        
-        # The rest will be handled by Python replacement below
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>WebSocket Relay - Performance Dashboard</title>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-                    color: #e2e8f0;
-                    min-height: 100vh;
-                    padding: 2rem;
-                }
-                .container {
-                    max-width: 1200px;
-                    margin: 0 auto;
-                }
-                header {
-                    text-align: center;
-                    margin-bottom: 3rem;
-                }
-                h1 {
-                    font-size: 3rem;
-                    margin-bottom: 1rem;
-                    background: linear-gradient(135deg, #60a5fa, #a78bfa);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                }
-                .status-badge {
-                    display: inline-block;
-                    padding: 0.75rem 1.5rem;
-                    border-radius: 50px;
-                    font-weight: bold;
-                    font-size: 1.1rem;
-                    margin-bottom: 2rem;
-                }
-                .card {
-                    background: rgba(30, 41, 59, 0.5);
-                    backdrop-filter: blur(10px);
-                    border: 1px solid rgba(71, 85, 105, 0.5);
-                    border-radius: 12px;
-                    padding: 2rem;
-                    margin-bottom: 2rem;
-                }
-                h2 {
-                    color: #60a5fa;
-                    margin-bottom: 1rem;
-                }
-                .info-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                    gap: 1rem;
-                    margin-top: 1rem;
-                }
-                .info-item {
-                    background: rgba(51, 65, 85, 0.3);
-                    padding: 1rem;
-                    border-radius: 8px;
-                }
-                .info-label {
-                    color: #94a3b8;
-                    font-size: 0.9rem;
-                    margin-bottom: 0.25rem;
-                }
-                .info-value {
-                    font-size: 1.1rem;
-                    font-weight: 500;
-                }
-                .health-response {
-                    background: #1e293b;
-                    border: 1px solid #334155;
-                    border-radius: 8px;
-                    padding: 1rem;
-                    margin-top: 1rem;
-                    font-family: 'Courier New', monospace;
-                    overflow-x: auto;
-                }
-                .history {
-                    margin-top: 2rem;
-                }
-                .footer {
-                    text-align: center;
-                    margin-top: 4rem;
-                    padding-top: 2rem;
-                    border-top: 1px solid rgba(71, 85, 105, 0.5);
-                    color: #64748b;
-                }
-                a {
-                    color: #60a5fa;
-                    text-decoration: none;
-                }
-                a:hover {
-                    text-decoration: underline;
-                }
-                .live-indicator {
-                    display: inline-block;
-                    width: 10px;
-                    height: 10px;
-                    background: #4ade80;
-                    border-radius: 50%;
-                    margin-right: 0.5rem;
-                    animation: pulse 2s infinite;
-                }
-                @keyframes pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <header>
-                    <h1>🚀 WebSocket Relay</h1>
-                    <div class="status-badge" id="status-badge">
-                        <span class="live-indicator" id="live-indicator"></span>
-                        <span id="status-text">Loading...</span>
-                    </div>
-                </header>
-                
-                <div class="card">
-                    <h2>📊 Latest Deployment</h2>
-                    <div class="info-grid" id="deployment-info">
-                        <div class="info-item">
-                            <div class="info-label">Status</div>
-                            <div class="info-value" id="deployment-status">Loading...</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Timestamp</div>
-                            <div class="info-value" id="deployment-time">Loading...</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Commit</div>
-                            <div class="info-value" id="deployment-commit">Loading...</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Version</div>
-                            <div class="info-value" id="service-version">Loading...</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h2>📊 Latest Benchmark Results</h2>
-                    <div class="info-grid" id="benchmark-stats">
-                        <div class="info-item">
-                            <div class="info-label">Messages/Second</div>
-                            <div class="info-value" id="msgs-per-sec">-</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Avg Latency</div>
-                            <div class="info-value" id="avg-latency">-</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">P99 Latency</div>
-                            <div class="info-value" id="p99-latency">-</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">Bandwidth</div>
-                            <div class="info-value" id="bandwidth">-</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h2>📈 Performance History</h2>
-                    <div style="position: relative; height: 300px; max-height: 300px;">
-                        <canvas id="performanceChart"></canvas>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h2>🔍 Health Check Response</h2>
-                    <div class="health-response">
-                        <pre id="health-response">Loading health data...</pre>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h2>🔗 Quick Links</h2>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <a href="SERVICE_URL_PLACEHOLDER" target="_blank">
-                                View Live Service →
-                            </a>
-                        </div>
-                        <div class="info-item">
-                            <a href="SERVICE_URL_PLACEHOLDER/health" target="_blank">
-                                Health Endpoint →
-                            </a>
-                        </div>
-                        <div class="info-item">
-                            <a href="https://github.com/GITHUB_REPOSITORY_PLACEHOLDER" target="_blank">
-                                GitHub Repository →
-                            </a>
-                        </div>
-                        <div class="info-item">
-                            <a href="https://github.com/GITHUB_REPOSITORY_PLACEHOLDER/actions" target="_blank">
-                                GitHub Actions →
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                
-                <footer class="footer">
-                    <p>Automatically deployed via GitHub Actions</p>
-                    <p><small>Last updated: <span id="last-updated"></span></small></p>
-                </footer>
-            </div>
-            
-            <script>
-                // Deployment data embedded from GitHub Actions
-                const deploymentData = DEPLOYMENT_DATA_PLACEHOLDER;
-                const historyData = HISTORY_DATA_PLACEHOLDER;
-                
-                // Update page with deployment data
-                function updatePage() {
-                    const statusBadge = document.getElementById('status-badge');
-                    const statusText = document.getElementById('status-text');
-                    const liveIndicator = document.getElementById('live-indicator');
-                    
-                    if (deploymentData.deployment_status === 'success') {
-                        statusBadge.style.background = 'rgba(74, 222, 128, 0.2)';
-                        statusBadge.style.border = '1px solid #4ade80';
-                        statusText.textContent = '✅ Deployment Successful';
-                        liveIndicator.style.background = '#4ade80';
-                    } else {
-                        statusBadge.style.background = 'rgba(248, 113, 113, 0.2)';
-                        statusBadge.style.border = '1px solid #f87171';
-                        statusText.textContent = '❌ Deployment Failed';
-                        liveIndicator.style.background = '#f87171';
-                    }
-                    
-                    document.getElementById('deployment-status').textContent = 
-                        deploymentData.deployment_status || 'Unknown';
-                    document.getElementById('deployment-time').textContent = 
-                        deploymentData.timestamp || 'Unknown';
-                    document.getElementById('deployment-commit').textContent = 
-                        (deploymentData.commit || 'Unknown').substring(0, 7);
-                    document.getElementById('service-version').textContent = 
-                        deploymentData.service_version || 'Unknown';
-                    
-                    if (deploymentData.health_response) {
-                        document.getElementById('health-response').textContent = 
-                            JSON.stringify(deploymentData.health_response, null, 2);
-                    }
-                    
-                    document.getElementById('last-updated').textContent = 
-                        new Date().toUTCString();
-                    
-                    // Update benchmark stats if available
-                    if (deploymentData.benchmark_results) {
-                        const bench = deploymentData.benchmark_results;
-                        document.getElementById('msgs-per-sec').textContent = 
-                            bench.messages_per_second ? bench.messages_per_second.toFixed(0) + ' msg/s' : '-';
-                        document.getElementById('avg-latency').textContent = 
-                            bench.avg_latency_ms ? bench.avg_latency_ms.toFixed(2) + ' ms' : '-';
-                        document.getElementById('p99-latency').textContent = 
-                            bench.p99_latency_ms ? bench.p99_latency_ms.toFixed(2) + ' ms' : '-';
-                        document.getElementById('bandwidth').textContent = 
-                            bench.bandwidth_mbps ? bench.bandwidth_mbps.toFixed(2) + ' Mbps' : '-';
-                    }
-                }
-                
-                // Render performance chart
-                function renderChart() {
-                    const ctx = document.getElementById('performanceChart').getContext('2d');
-                    
-                    // Prepare data for chart (last 20 commits)
-                    const chartHistory = historyData.slice(0, 20).reverse();
-                    
-                    const labels = chartHistory.map(h => h.commit_short || 'unknown');
-                    const msgPerSec = chartHistory.map(h => 
-                        h.benchmark_results?.messages_per_second || 0);
-                    const avgLatency = chartHistory.map(h => 
-                        h.benchmark_results?.avg_latency_ms || 0);
-                    const p99Latency = chartHistory.map(h => 
-                        h.benchmark_results?.p99_latency_ms || 0);
-                    const bandwidth = chartHistory.map(h => 
-                        h.benchmark_results?.bandwidth_mbps || 0);
-                    
-                    new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                {
-                                    label: 'Messages/Second',
-                                    data: msgPerSec,
-                                    borderColor: 'rgb(75, 192, 192)',
-                                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                                    yAxisID: 'y',
-                                    tension: 0.1
-                                },
-                                {
-                                    label: 'Avg Latency (ms)',
-                                    data: avgLatency,
-                                    borderColor: 'rgb(255, 159, 64)',
-                                    backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                                    yAxisID: 'y1',
-                                    tension: 0.1
-                                },
-                                {
-                                    label: 'P99 Latency (ms)',
-                                    data: p99Latency,
-                                    borderColor: 'rgb(255, 99, 132)',
-                                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                                    yAxisID: 'y1',
-                                    tension: 0.1
-                                }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: {
-                                mode: 'index',
-                                intersect: false,
-                            },
-                            plugins: {
-                                title: {
-                                    display: true,
-                                    text: 'Performance Over Time (Last 20 Commits)',
-                                    color: '#e2e8f0'
-                                },
-                                legend: {
-                                    labels: {
-                                        color: '#e2e8f0'
-                                    }
-                                }
-                            },
-                            scales: {
-                                x: {
-                                    ticks: {
-                                        color: '#94a3b8'
-                                    },
-                                    grid: {
-                                        color: 'rgba(148, 163, 184, 0.1)'
-                                    }
-                                },
-                                y: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'left',
-                                    title: {
-                                        display: true,
-                                        text: 'Messages/Second',
-                                        color: '#94a3b8'
-                                    },
-                                    ticks: {
-                                        color: '#94a3b8'
-                                    },
-                                    grid: {
-                                        color: 'rgba(148, 163, 184, 0.1)'
-                                    }
-                                },
-                                y1: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'right',
-                                    title: {
-                                        display: true,
-                                        text: 'Latency (ms)',
-                                        color: '#94a3b8'
-                                    },
-                                    ticks: {
-                                        color: '#94a3b8'
-                                    },
-                                    grid: {
-                                        drawOnChartArea: false,
-                                        color: 'rgba(148, 163, 184, 0.1)'
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-                
-                // Update page on load
-                updatePage();
-                
-                // Render chart if we have history
-                if (historyData && historyData.length > 0) {
-                    renderChart();
-                }
-                
-                // Live health check (optional)
-                async function checkHealth() {
-                    try {
-                        const response = await fetch('SERVICE_URL_PLACEHOLDER/health');
-                        if (response.ok) {
-                            const data = await response.json();
-                            document.getElementById('health-response').textContent = 
-                                JSON.stringify(data, null, 2);
-                        }
-                    } catch (e) {
-                        console.log('Could not fetch live health data:', e);
-                    }
-                }
-                
-                // Try to fetch live health data
-                setTimeout(checkHealth, 2000);
-            </script>
-        </body>
-        </html>
-        EOF
         
         # Replace placeholders with actual data
         # Write JSON to files to avoid escaping issues
@@ -663,10 +239,10 @@ jobs:
     - name: Setup Pages
       uses: actions/configure-pages@v4
       
-    - name: Upload to GitHub Pages
+    - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: .
+        path: '.'
         
     - name: Deploy to GitHub Pages
       id: deployment
