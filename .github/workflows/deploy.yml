@@ -69,7 +69,7 @@ jobs:
         
         echo "Running functional tests..."
         cd test
-        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" go run functional_test.go
+        SERVER_URL="http://${{ secrets.SERVER_IP }}:8080" go run functional.go
         cd ..
         echo "functional_test_status=passed" >> $GITHUB_OUTPUT
 
