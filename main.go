@@ -13,7 +13,7 @@ var (
 	startTime   = time.Now()
 	commitHash  = os.Getenv("COMMIT_HASH")
 	buildTime   = os.Getenv("BUILD_TIME")
-	version     = "1.1.0"
+	version     = "1.2.0"
 )
 
 type HealthResponse struct {
@@ -40,6 +40,8 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Service-Version", version)
+	w.Header().Set("X-Service-Uptime", uptime.String())
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }

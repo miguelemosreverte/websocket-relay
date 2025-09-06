@@ -48,6 +48,15 @@ if [ -f "$PID_FILE" ]; then
     rm -f "$PID_FILE"
 fi
 
+# Also check if any process is using port 8080 and kill it
+echo "Checking for processes using port $PORT..."
+PORT_PID=$(lsof -ti:$PORT 2>/dev/null || true)
+if [ ! -z "$PORT_PID" ]; then
+    echo "Found process $PORT_PID using port $PORT, stopping it..."
+    kill -9 $PORT_PID 2>/dev/null || true
+    sleep 2
+fi
+
 # Start the new service
 echo "Starting new service..."
 export PORT=$PORT
