@@ -116,21 +116,8 @@ jobs:
         DEPLOYMENT_DATA=$(cat deployment-report.json 2>/dev/null || echo '{"deployment_status":"unknown"}')
         STATUS=$(echo "$DEPLOYMENT_DATA" | jq -r '.deployment_status')
         
-        # Determine status color and icon
-        if [ "$STATUS" = "success" ]; then
-          STATUS_COLOR="#4ade80"
-          STATUS_ICON="✅"
-          STATUS_TEXT="Deployment Successful"
-        else
-          STATUS_COLOR="#f87171"
-          STATUS_ICON="❌"
-          STATUS_TEXT="Deployment Failed"
-        fi
-        
-        # Export for use in heredoc
-        export DEPLOYMENT_DATA
-        
-        cat > index.html << EOF
+        # Create the HTML with embedded JSON data
+        cat > index.html << 'HTMLEOF'
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -285,22 +272,22 @@ jobs:
                     <h2>🔗 Quick Links</h2>
                     <div class="info-grid">
                         <div class="info-item">
-                            <a href="http://${{ secrets.SERVER_IP }}:8080/" target="_blank">
+                            <a href="http://SERVER_IP_PLACEHOLDER:8080/" target="_blank">
                                 View Live Service →
                             </a>
                         </div>
                         <div class="info-item">
-                            <a href="http://${{ secrets.SERVER_IP }}:8080/health" target="_blank">
+                            <a href="http://SERVER_IP_PLACEHOLDER:8080/health" target="_blank">
                                 Health Endpoint →
                             </a>
                         </div>
                         <div class="info-item">
-                            <a href="https://github.com/${{ github.repository }}" target="_blank">
+                            <a href="https://github.com/GITHUB_REPOSITORY_PLACEHOLDER" target="_blank">
                                 GitHub Repository →
                             </a>
                         </div>
                         <div class="info-item">
-                            <a href="https://github.com/${{ github.repository }}/actions" target="_blank">
+                            <a href="https://github.com/GITHUB_REPOSITORY_PLACEHOLDER/actions" target="_blank">
                                 GitHub Actions →
                             </a>
                         </div>
@@ -315,7 +302,7 @@ jobs:
             
             <script>
                 // Deployment data embedded from GitHub Actions
-                const deploymentData = ${DEPLOYMENT_DATA};
+                const deploymentData = DEPLOYMENT_DATA_PLACEHOLDER;
                 
                 // Update page with deployment data
                 function updatePage() {
@@ -359,7 +346,7 @@ jobs:
                 // Live health check (optional)
                 async function checkHealth() {
                     try {
-                        const response = await fetch('http://${{ secrets.SERVER_IP }}:8080/health');
+                        const response = await fetch('http://SERVER_IP_PLACEHOLDER:8080/health');
                         if (response.ok) {
                             const data = await response.json();
                             document.getElementById('health-response').textContent = 
@@ -375,7 +362,19 @@ jobs:
             </script>
         </body>
         </html>
-        EOF
+HTMLEOF
+        
+        # Replace placeholders with actual data
+        # First, save the template
+        cp index.html index.html.tmp
+        
+        # Replace all placeholders
+        sed -e "s|DEPLOYMENT_DATA_PLACEHOLDER|$DEPLOYMENT_DATA|g" \
+            -e "s|SERVER_IP_PLACEHOLDER|${{ secrets.SERVER_IP }}|g" \
+            -e "s|GITHUB_REPOSITORY_PLACEHOLDER|${{ github.repository }}|g" \
+            index.html.tmp > index.html
+        
+        rm index.html.tmp
         
     - name: Setup Pages
       uses: actions/configure-pages@v4
