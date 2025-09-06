@@ -100,8 +100,12 @@ ${DOMAIN} {
     # Enable compression
     encode gzip
     
-    # Security headers
+    # Security and CORS headers
     header {
+        Access-Control-Allow-Origin "https://miguelemosreverte.github.io"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type"
+        Access-Control-Max-Age "3600"
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         X-XSS-Protection "1; mode=block"
@@ -131,6 +135,14 @@ ${SERVER_IP} {
         header Upgrade websocket
     }
     reverse_proxy @websocket localhost:${PORT}
+    
+    # CORS headers for IP access
+    header {
+        Access-Control-Allow-Origin "https://miguelemosreverte.github.io"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type"
+        Access-Control-Max-Age "3600"
+    }
 }
 EOF
 else
@@ -150,8 +162,12 @@ ${SERVER_IP} {
     # Enable compression
     encode gzip
     
-    # Security headers
+    # Security and CORS headers
     header {
+        Access-Control-Allow-Origin "https://miguelemosreverte.github.io"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type"
+        Access-Control-Max-Age "3600"
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         X-XSS-Protection "1; mode=block"
