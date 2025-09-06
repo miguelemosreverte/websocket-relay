@@ -751,16 +751,28 @@
             const labels = commits.map(c => c.commit_short || 'unknown');
             
             // Debug: Log the first few commits to see their structure
-            console.log('Historical commits data structure:', commits.slice(0, 3).map(c => ({
+            console.log('Historical commits data structure:', commits.slice(0, 5).map(c => ({
                 commit: c.commit_short,
                 has_results: !!c.benchmark_results,
                 has_transport: !!c.benchmark_results?.results,
                 websocket_data: c.benchmark_results?.results?.websocket,
                 direct_data: {
                     messages_per_second: c.benchmark_results?.messages_per_second,
-                    avg_latency: c.benchmark_results?.avg_latency_ms
+                    avg_latency: c.benchmark_results?.avg_latency_ms,
+                    total_received: c.benchmark_results?.total_messages_received
                 }
             })));
+            
+            // Debug extracted metrics
+            console.log('Extracted metrics:', commits.slice(0, 5).map(c => {
+                const metrics = extractMetrics(c);
+                return {
+                    commit: c.commit_short,
+                    latency: metrics?.average_latency_ms,
+                    throughput: metrics?.messages_per_second,
+                    is_broken: metrics?.is_broken
+                };
+            }));
             
             let datasets = [];
             
@@ -822,8 +834,15 @@
                         data: commits.map(c => {
                             const metrics = extractMetrics(c);
                             // Don't plot zero values from broken benchmarks
-                            if (metrics && metrics.is_broken) return null;
-                            return metrics ? (metrics.average_latency_ms || 0) : null;
+                            if (metrics && metrics.is_broken) {
+                                console.log(`Skipping broken benchmark for ${c.commit_short}`);
+                                return null;
+                            }
+                            const value = metrics ? (metrics.average_latency_ms || 0) : null;
+                            if (value === 0 && metrics) {
+                                console.warn(`Zero latency for ${c.commit_short}, metrics:`, metrics);
+                            }
+                            return value;
                         }),
                         borderColor: chartColors.blue,
                         backgroundColor: chartColors.blue + '20',
