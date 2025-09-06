@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Relay - Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            color: #60a5fa;
+            margin-bottom: 1rem;
+        }
+        .commit-selector {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+        .commit-dropdown {
+            padding: 0.75rem 1.5rem;
+            background: rgba(51, 65, 85, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 1rem;
+            cursor: pointer;
+            min-width: 200px;
+        }
+        .commit-info {
+            color: #94a3b8;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: rgba(51, 65, 85, 0.3);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #60a5fa;
+            margin-bottom: 0.5rem;
+        }
+        .metric-label {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 2rem;
+        }
+        .chart-container.small {
+            height: 250px;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .transport-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 768px) {
+            .transport-comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+        .transport-card {
+            background: rgba(51, 65, 85, 0.3);
+            padding: 1.5rem;
+            border-radius: 8px;
+            position: relative;
+        }
+        .transport-card.winner {
+            border: 2px solid #10b981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+        .transport-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .winner-badge {
+            background: linear-gradient(135deg, #10b981, #34d399);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        .comparison-metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+        }
+        .comparison-metric:last-child {
+            border-bottom: none;
+        }
+        .metric-name {
+            color: #94a3b8;
+        }
+        .metric-val {
+            font-weight: bold;
+        }
+        .better {
+            color: #10b981;
+        }
+        .worse {
+            color: #ef4444;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+        .tab-button {
+            padding: 0.75rem 1.5rem;
+            background: rgba(51, 65, 85, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 8px;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tab-button:hover {
+            background: rgba(71, 85, 105, 0.5);
+        }
+        .tab-button.active {
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            border-color: transparent;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-left: 1rem;
+        }
+        .status-badge.success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+        .no-data {
+            text-align: center;
+            color: #64748b;
+            padding: 2rem;
+        }
+        .section-divider {
+            border-top: 1px solid rgba(71, 85, 105, 0.3);
+            margin: 3rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 WebSocket Relay Performance Dashboard</h1>
+            <p style="color: #94a3b8; margin-top: 0.5rem;">Detailed Performance Analysis & Transport Comparison</p>
+            <div style="margin-top: 1rem;">
+                <span id="deployment-status"></span>
+                <span id="test-timestamp" style="margin-left: 1rem; color: #64748b;"></span>
+            </div>
+        </header>
+
+        <!-- Commit Selector and Per-Commit Analysis -->
+        <div class="card">
+            <h2>📊 Per-Commit Performance Analysis</h2>
+            <div class="commit-selector">
+                <label for="commit-select">Select Commit:</label>
+                <select id="commit-select" class="commit-dropdown" onchange="selectCommit(this.value)">
+                    <!-- Will be populated by JavaScript -->
+                </select>
+                <span class="commit-info" id="commit-info"></span>
+            </div>
+
+            <!-- Metrics for selected commit -->
+            <div id="commit-metrics" class="metrics-grid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+
+            <!-- Time-series charts for selected commit -->
+            <div id="commit-charts">
+                <h3 style="color: #a78bfa; margin: 2rem 0 1rem 0;">📈 Time-Series Performance (5-second test)</h3>
+                <div class="charts-grid">
+                    <div>
+                        <h4 style="color: #94a3b8; margin-bottom: 1rem;">Throughput Over Time</h4>
+                        <div class="chart-container small">
+                            <canvas id="throughputChart"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: #94a3b8; margin-bottom: 1rem;">Latency Over Time</h4>
+                        <div class="chart-container small">
+                            <canvas id="latencyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div>
+                        <h4 style="color: #94a3b8; margin-bottom: 1rem;">Bandwidth Over Time</h4>
+                        <div class="chart-container small">
+                            <canvas id="bandwidthChart"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: #94a3b8; margin-bottom: 1rem;">Active Connections</h4>
+                        <div class="chart-container small">
+                            <canvas id="connectionsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transport Comparison (if available) -->
+        <div class="card" id="transport-comparison-card" style="display: none;">
+            <h2>⚡ Transport Comparison: WebSocket (TCP) vs UDP</h2>
+            <div class="transport-comparison" id="transport-comparison">
+                <!-- Will be populated by JavaScript -->
+            </div>
+            <div class="chart-container">
+                <canvas id="transportComparisonChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Historical Trends -->
+        <div class="card">
+            <h2>📈 Historical Performance Trends</h2>
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showHistoryView('latency', this)">Latency</button>
+                <button class="tab-button" onclick="showHistoryView('throughput', this)">Throughput</button>
+                <button class="tab-button" onclick="showHistoryView('bandwidth', this)">Bandwidth</button>
+                <button class="tab-button" onclick="showHistoryView('percentiles', this)">Percentiles</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Test Configuration -->
+        <div class="card">
+            <h2>🔧 Test Configuration</h2>
+            <div id="test-config"></div>
+        </div>
+    </div>
+
+    <script>
+        // Data will be injected here by the deployment process
+        const deploymentData = DEPLOYMENT_DATA_PLACEHOLDER;
+        const historyData = HISTORY_DATA_PLACEHOLDER;
+        const serviceUrl = 'SERVICE_URL_PLACEHOLDER';
+
+        // Chart configurations
+        const chartColors = {
+            blue: '#60a5fa',
+            purple: '#a78bfa',
+            green: '#10b981',
+            red: '#ef4444',
+            yellow: '#eab308',
+            gray: '#64748b',
+            websocket: '#60a5fa',
+            udp: '#a78bfa'
+        };
+
+        let currentCommitIndex = 0;
+        let timeSeriesCharts = {};
+
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toFixed(0);
+        }
+
+        function populateCommitSelector() {
+            const select = document.getElementById('commit-select');
+            select.innerHTML = '';
+            
+            // Add current deployment first
+            const currentOption = document.createElement('option');
+            currentOption.value = -1;
+            currentOption.text = `Current: ${deploymentData.commit_short || 'Latest'} - ${deploymentData.timestamp ? new Date(deploymentData.timestamp).toLocaleDateString() : 'Now'}`;
+            select.add(currentOption);
+            
+            // Add historical commits
+            historyData.forEach((commit, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                const date = new Date(commit.timestamp).toLocaleDateString();
+                const message = commit.commit_message ? commit.commit_message.substring(0, 30) + '...' : '';
+                option.text = `${commit.commit_short || 'unknown'} - ${date} - ${message}`;
+                select.add(option);
+            });
+        }
+
+        function selectCommit(index) {
+            currentCommitIndex = parseInt(index);
+            const data = currentCommitIndex === -1 ? deploymentData : historyData[currentCommitIndex];
+            
+            // Update commit info
+            const info = document.getElementById('commit-info');
+            if (data.commit_message) {
+                info.textContent = data.commit_message.substring(0, 100);
+            }
+            
+            // Render metrics and charts for this commit
+            renderCommitMetrics(data);
+            renderTimeSeriesCharts(data);
+            
+            // Show transport comparison if available
+            if (data.benchmark_results?.results) {
+                renderTransportComparison(data);
+                document.getElementById('transport-comparison-card').style.display = 'block';
+            } else {
+                document.getElementById('transport-comparison-card').style.display = 'none';
+            }
+        }
+
+        function renderCommitMetrics(data) {
+            const container = document.getElementById('commit-metrics');
+            
+            // Handle both old format (direct metrics) and new format (results.websocket/udp)
+            let metrics = null;
+            if (data.benchmark_results) {
+                if (data.benchmark_results.results?.websocket) {
+                    // New format with transport comparison
+                    metrics = data.benchmark_results.results.websocket;
+                } else {
+                    // Old format with direct metrics
+                    metrics = data.benchmark_results;
+                }
+            }
+            
+            if (!metrics) {
+                container.innerHTML = '<div class="no-data">No benchmark data available for this commit</div>';
+                return;
+            }
+            
+            const metricsHtml = `
+                <div class="metric-card">
+                    <div class="metric-value">${formatNumber(metrics.total_messages || metrics.total_messages_sent || 0)}</div>
+                    <div class="metric-label">Total Messages</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(metrics.messages_per_second || 0).toFixed(0)}</div>
+                    <div class="metric-label">Messages/Second</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(metrics.average_latency_ms || metrics.avg_latency_ms || 0).toFixed(2)}</div>
+                    <div class="metric-label">Avg Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(metrics.p50_latency_ms || 0).toFixed(2)}</div>
+                    <div class="metric-label">P50 Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(metrics.p95_latency_ms || 0).toFixed(2)}</div>
+                    <div class="metric-label">P95 Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(metrics.p99_latency_ms || 0).toFixed(2)}</div>
+                    <div class="metric-label">P99 Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${((metrics.bytes_per_second || metrics.bandwidth_mbps * 125000 || 0) / 1024 / 1024).toFixed(2)}</div>
+                    <div class="metric-label">Bandwidth (MB/s)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${metrics.failed_connections || 0}</div>
+                    <div class="metric-label">Failed Connections</div>
+                </div>
+            `;
+            container.innerHTML = metricsHtml;
+        }
+
+        function renderTimeSeriesCharts(data) {
+            // Destroy existing charts
+            Object.values(timeSeriesCharts).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+            timeSeriesCharts = {};
+            
+            // Check for time series data in both old and new formats
+            let timeSeries = null;
+            if (data.benchmark_results?.time_series) {
+                timeSeries = data.benchmark_results.time_series;
+            } else if (data.benchmark_results?.results?.websocket?.time_series) {
+                timeSeries = data.benchmark_results.results.websocket.time_series;
+            }
+            
+            if (!timeSeries || timeSeries.length === 0) {
+                document.getElementById('commit-charts').innerHTML = '<div class="no-data">No time-series data available for this commit</div>';
+                return;
+            }
+            
+            const timestamps = timeSeries.map(s => (s.timestamp || 0).toFixed(1) + 's');
+            
+            // Throughput Chart
+            const throughputCtx = document.getElementById('throughputChart');
+            if (throughputCtx) {
+                timeSeriesCharts.throughput = new Chart(throughputCtx, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Messages/Second',
+                            data: timeSeries.map(s => s.messages_per_second || 0),
+                            borderColor: chartColors.blue,
+                            backgroundColor: chartColors.blue + '20',
+                            borderWidth: 2,
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Latency Chart
+            const latencyCtx = document.getElementById('latencyChart');
+            if (latencyCtx) {
+                timeSeriesCharts.latency = new Chart(latencyCtx, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [
+                            {
+                                label: 'Average',
+                                data: timeSeries.map(s => s.avg_latency_ms || 0),
+                                borderColor: chartColors.green,
+                                borderWidth: 2,
+                                tension: 0.3
+                            },
+                            {
+                                label: 'P95',
+                                data: timeSeries.map(s => s.p95_latency_ms || 0),
+                                borderColor: chartColors.yellow,
+                                borderWidth: 2,
+                                tension: 0.3
+                            },
+                            {
+                                label: 'P99',
+                                data: timeSeries.map(s => s.p99_latency_ms || 0),
+                                borderColor: chartColors.red,
+                                borderWidth: 2,
+                                tension: 0.3
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { color: '#e2e8f0' }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Latency (ms)', color: '#94a3b8' },
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Bandwidth Chart
+            const bandwidthCtx = document.getElementById('bandwidthChart');
+            if (bandwidthCtx) {
+                timeSeriesCharts.bandwidth = new Chart(bandwidthCtx, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Bandwidth (Mbps)',
+                            data: timeSeries.map(s => s.bandwidth_mbps || 0),
+                            borderColor: chartColors.purple,
+                            backgroundColor: chartColors.purple + '20',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Connections Chart
+            const connectionsCtx = document.getElementById('connectionsChart');
+            if (connectionsCtx) {
+                timeSeriesCharts.connections = new Chart(connectionsCtx, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Active Connections',
+                            data: timeSeries.map(s => s.active_connections || 0),
+                            borderColor: chartColors.gray,
+                            backgroundColor: chartColors.gray + '20',
+                            borderWidth: 2,
+                            stepped: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8', stepSize: 1 }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderTransportComparison(data) {
+            const results = data.benchmark_results?.results;
+            if (!results || !results.websocket || !results.udp) return;
+            
+            const ws = results.websocket;
+            const udp = results.udp;
+            
+            // Determine winners
+            const latencyWinner = ws.average_latency_ms < udp.average_latency_ms ? 'websocket' : 'udp';
+            const throughputWinner = ws.messages_per_second > udp.messages_per_second ? 'websocket' : 'udp';
+            
+            const wsCard = `
+                <div class="transport-card ${latencyWinner === 'websocket' ? 'winner' : ''}">
+                    <div class="transport-title">
+                        📡 WebSocket (TCP)
+                        ${latencyWinner === 'websocket' ? '<span class="winner-badge">🏆 Winner</span>' : ''}
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Avg Latency</span>
+                        <span class="metric-val ${latencyWinner === 'websocket' ? 'better' : 'worse'}">${ws.average_latency_ms.toFixed(2)} ms</span>
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Messages/sec</span>
+                        <span class="metric-val ${throughputWinner === 'websocket' ? 'better' : 'worse'}">${ws.messages_per_second.toFixed(0)}</span>
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Bandwidth</span>
+                        <span class="metric-val">${(ws.bytes_per_second / 1024 / 1024).toFixed(2)} MB/s</span>
+                    </div>
+                </div>
+            `;
+            
+            const udpCard = `
+                <div class="transport-card ${latencyWinner === 'udp' ? 'winner' : ''}">
+                    <div class="transport-title">
+                        🌐 UDP
+                        ${latencyWinner === 'udp' ? '<span class="winner-badge">🏆 Winner</span>' : ''}
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Avg Latency</span>
+                        <span class="metric-val ${latencyWinner === 'udp' ? 'better' : 'worse'}">${udp.average_latency_ms.toFixed(2)} ms</span>
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Messages/sec</span>
+                        <span class="metric-val ${throughputWinner === 'udp' ? 'better' : 'worse'}">${udp.messages_per_second.toFixed(0)}</span>
+                    </div>
+                    <div class="comparison-metric">
+                        <span class="metric-name">Bandwidth</span>
+                        <span class="metric-val">${(udp.bytes_per_second / 1024 / 1024).toFixed(2)} MB/s</span>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('transport-comparison').innerHTML = wsCard + udpCard;
+            
+            // Render comparison chart
+            const ctx = document.getElementById('transportComparisonChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Avg Latency (ms)', 'P99 Latency (ms)', 'Messages/sec', 'Bandwidth (MB/s)'],
+                        datasets: [
+                            {
+                                label: 'WebSocket',
+                                data: [
+                                    ws.average_latency_ms,
+                                    ws.p99_latency_ms,
+                                    ws.messages_per_second,
+                                    ws.bytes_per_second / 1024 / 1024
+                                ],
+                                backgroundColor: chartColors.websocket + '80',
+                                borderColor: chartColors.websocket,
+                                borderWidth: 2
+                            },
+                            {
+                                label: 'UDP',
+                                data: [
+                                    udp.average_latency_ms,
+                                    udp.p99_latency_ms,
+                                    udp.messages_per_second,
+                                    udp.bytes_per_second / 1024 / 1024
+                                ],
+                                backgroundColor: chartColors.udp + '80',
+                                borderColor: chartColors.udp,
+                                borderWidth: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { color: '#e2e8f0' }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                                ticks: { color: '#94a3b8' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        let historyChart = null;
+        
+        function showHistoryView(view, buttonElement) {
+            // Update active button
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
+            
+            // Destroy existing chart
+            if (historyChart) {
+                historyChart.destroy();
+            }
+            
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            
+            // Build datasets based on view
+            const commits = [deploymentData, ...historyData].slice(0, 20);
+            const labels = commits.map(c => c.commit_short || 'unknown');
+            
+            let datasets = [];
+            
+            if (view === 'latency') {
+                datasets = [
+                    {
+                        label: 'Average Latency',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.average_latency_ms || metrics?.avg_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.blue,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'P99 Latency',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.p99_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.red,
+                        borderWidth: 2
+                    }
+                ];
+            } else if (view === 'throughput') {
+                datasets = [
+                    {
+                        label: 'Messages/Second',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.messages_per_second || 0;
+                        }),
+                        borderColor: chartColors.green,
+                        borderWidth: 2
+                    }
+                ];
+            } else if (view === 'bandwidth') {
+                datasets = [
+                    {
+                        label: 'Bandwidth (MB/s)',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            const bytesPerSec = metrics?.bytes_per_second || (metrics?.bandwidth_mbps * 125000) || 0;
+                            return bytesPerSec / 1024 / 1024;
+                        }),
+                        borderColor: chartColors.purple,
+                        borderWidth: 2
+                    }
+                ];
+            } else if (view === 'percentiles') {
+                datasets = [
+                    {
+                        label: 'P50',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.p50_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.green,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'P95',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.p95_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.yellow,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'P99',
+                        data: commits.map(c => {
+                            const metrics = c.benchmark_results?.results?.websocket || c.benchmark_results;
+                            return metrics?.p99_latency_ms || 0;
+                        }),
+                        borderColor: chartColors.red,
+                        borderWidth: 2
+                    }
+                ];
+            }
+            
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#e2e8f0' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { 
+                                color: '#94a3b8',
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTestConfig() {
+            const config = deploymentData.benchmark_results?.test_config || deploymentData.benchmark_results?.config;
+            if (!config) {
+                document.getElementById('test-config').innerHTML = '<div class="no-data">No configuration data available</div>';
+                return;
+            }
+            
+            const configHtml = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">${config.num_clients || config.clients || 50}</div>
+                        <div class="metric-label">Concurrent Clients</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${config.duration || '5s'}</div>
+                        <div class="metric-label">Test Duration</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${config.messages_per_client_per_sec || 10}</div>
+                        <div class="metric-label">Messages/Client/Sec</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${config.message_size_bytes || 1024}</div>
+                        <div class="metric-label">Message Size (bytes)</div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('test-config').innerHTML = configHtml;
+        }
+
+        function updateDeploymentStatus() {
+            const status = deploymentData.deployment_status;
+            let badge = '';
+            if (status === 'success') {
+                badge = '<span class="status-badge success">✅ Deployed Successfully</span>';
+            } else {
+                badge = '<span class="status-badge">Status: ' + status + '</span>';
+            }
+            document.getElementById('deployment-status').innerHTML = badge;
+            
+            if (deploymentData.timestamp) {
+                const date = new Date(deploymentData.timestamp);
+                document.getElementById('test-timestamp').textContent = `Last tested: ${date.toLocaleString()}`;
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDeploymentStatus();
+            populateCommitSelector();
+            selectCommit(-1); // Start with current deployment
+            showHistoryView('latency', document.querySelector('.tab-button.active'));
+            renderTestConfig();
+        });
+    </script>
+</body>
+</html>

@@ -195,8 +195,8 @@ jobs:
         HISTORY_DATA=$(cat benchmarks/history.json 2>/dev/null || echo '[]')
         STATUS=$(echo "$DEPLOYMENT_DATA" | jq -r '.deployment_status')
         
-        # Copy transport dashboard template
-        cp ${{ github.workspace }}/.github/workflows/transport-dashboard.html index.html
+        # Copy comprehensive dashboard template
+        cp ${{ github.workspace }}/.github/workflows/comprehensive-dashboard.html index.html
         
         # Replace placeholders with actual data
         # Write JSON to files to avoid escaping issues
