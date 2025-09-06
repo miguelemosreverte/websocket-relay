@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Console Output</title>
+</head>
+<body>
+    <h1>Dashboard Console Debug Output</h1>
+    <p>Open your browser console (F12) and then visit the dashboard in a new tab:</p>
+    <p><a href="https://miguelemosreverte.github.io/websocket-relay/" target="_blank">Open Dashboard</a></p>
+    <p>Then come back here and paste what you see in the console.</p>
+    
+    <h2>Expected Console Output:</h2>
+    <pre>
+Historical commits data structure: [...]
+Extracted metrics: [...]
+Skipping broken benchmark for ...
+Zero latency for ...
+    </pre>
+    
+    <h2>What This Tells Us:</h2>
+    <ul>
+        <li>If you see "websocket_data: undefined" - the new format isn't being detected</li>
+        <li>If you see "is_broken: true" - commits are being filtered out</li>
+        <li>If you see "latency: 0" - the extraction is failing</li>
+        <li>If you see "latency: null" - no data is available</li>
+    </ul>
+    
+    <p>The console output will reveal exactly why the charts show zeros.</p>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "config": {
+    "clients": 20,
+    "duration": "5s",
+    "server": "http://localhost:8080"
+  },
+  "results": {
+    "udp": {
+      "transport": "udp",
+      "messages_per_second": 199.58369005741224,
+      "bytes_per_second": 777429.3666145853,
+      "average_latency_ms": 2.9895082157258073,
+      "p50_latency_ms": 1.958917,
+      "p95_latency_ms": 9.430334,
+      "p99_latency_ms": 14.095,
+      "total_messages": 1000,
+      "total_bytes": 3895255,
+      "failed_connections": 0,
+      "dropped_messages": 0,
+      "test_duration_seconds": 5.010429458
+    },
+    "websocket": {
+      "transport": "websocket",
+      "messages_per_second": 199.79736718849531,
+      "bytes_per_second": 656857.2209241394,
+      "average_latency_ms": 2.8277731673469395,
+      "p50_latency_ms": 2.644375,
+      "p95_latency_ms": 5.2595,
+      "p99_latency_ms": 6.0218750000000005,
+      "total_messages": 1000,
+      "total_bytes": 3287617,
+      "failed_connections": 0,
+      "dropped_messages": 0,
+      "test_duration_seconds": 5.005070958
+    }
+  },
+  "timestamp": "2025-09-06T04:35:16+02:00"
+}

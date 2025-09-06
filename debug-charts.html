@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Chart Data</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Debug Historical Charts</h1>
+    <canvas id="testChart" width="800" height="400"></canvas>
+    <pre id="debug"></pre>
+    
+    <script>
+        // Fetch the actual page and extract the data
+        fetch('https://miguelemosreverte.github.io/websocket-relay/')
+            .then(r => r.text())
+            .then(html => {
+                // Extract deploymentData and historyData
+                const deploymentMatch = html.match(/const deploymentData = (\{[\s\S]*?\});[\s]*const historyData/);
+                const historyMatch = html.match(/const historyData = (\[[\s\S]*?\]);[\s]*const serviceUrl/);
+                
+                if (!deploymentMatch || !historyMatch) {
+                    document.getElementById('debug').textContent = 'Could not extract data';
+                    return;
+                }
+                
+                const deploymentData = eval('(' + deploymentMatch[1] + ')');
+                const historyData = eval('(' + historyMatch[1] + ')');
+                
+                // Build commits array like the dashboard does
+                const commits = [deploymentData, ...historyData].slice(0, 20);
+                
+                // Extract metrics function from dashboard
+                function extractMetrics(commit) {
+                    const bench = commit.benchmark_results;
+                    if (!bench) return null;
+                    
+                    // Try new transport format first (results.websocket)
+                    if (bench.results && bench.results.websocket) {
+                        return bench.results.websocket;
+                    }
+                    
+                    // Fall back to old direct format
+                    if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                        // Check if this is a broken benchmark (no messages received)
+                        if (bench.total_messages_received === 0 && bench.avg_latency_ms === 0) {
+                            console.warn(`Broken benchmark detected for commit ${commit.commit_short}: no messages received`);
+                            return {
+                                average_latency_ms: 0,
+                                messages_per_second: bench.messages_per_second || 0,
+                                is_broken: true
+                            };
+                        }
+                        
+                        return {
+                            average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
+                            messages_per_second: bench.messages_per_second || 0
+                        };
+                    }
+                    
+                    return null;
+                }
+                
+                // Generate chart data
+                const labels = commits.map(c => c.commit_short || 'unknown');
+                const latencyData = commits.map(c => {
+                    const metrics = extractMetrics(c);
+                    if (metrics && metrics.is_broken) return null;
+                    return metrics ? (metrics.average_latency_ms || 0) : null;
+                });
+                
+                // Debug output
+                const debugInfo = commits.map((c, i) => {
+                    const metrics = extractMetrics(c);
+                    return `${c.commit_short}: latency=${metrics?.average_latency_ms}, broken=${metrics?.is_broken}, plotted=${latencyData[i]}`;
+                });
+                
+                document.getElementById('debug').textContent = 
+                    'Chart Data Debug:\n' + debugInfo.join('\n') + 
+                    '\n\nActual data points: ' + JSON.stringify(latencyData);
+                
+                // Create chart
+                new Chart(document.getElementById('testChart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Average Latency (ms)',
+                            data: latencyData,
+                            borderColor: '#60a5fa',
+                            borderWidth: 2,
+                            spanGaps: true
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(err => {
+                document.getElementById('debug').textContent = 'Error: ' + err;
+            });
+    </script>
+</body>
+</html>

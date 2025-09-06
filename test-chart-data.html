@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Chart Data Extraction</title>
+</head>
+<body>
+    <h1>Testing Data Extraction</h1>
+    <pre id="output"></pre>
+    
+    <script>
+        // Simulate the data structure from the dashboard
+        const testData = [
+            {
+                commit_short: "aa1a022",
+                benchmark_results: {
+                    results: {
+                        websocket: {
+                            average_latency_ms: 124.45,
+                            messages_per_second: 499.74,
+                            bytes_per_second: 3980000
+                        }
+                    }
+                }
+            },
+            {
+                commit_short: "268587f", 
+                benchmark_results: {
+                    total_messages_received: 0,
+                    avg_latency_ms: 0,
+                    messages_per_second: 2498,
+                    avg_bandwidth_mbps: 23.14
+                }
+            },
+            {
+                commit_short: "04cd6ba",
+                benchmark_results: {
+                    total_messages_received: 0,
+                    avg_latency_ms: 0,
+                    messages_per_second: 200,
+                    bandwidth_mbps: 0.24
+                }
+            }
+        ];
+        
+        // Copy the extractMetrics function from dashboard
+        function extractMetrics(commit) {
+            const bench = commit.benchmark_results;
+            if (!bench) return null;
+            
+            // Try new transport format first (results.websocket)
+            if (bench.results && bench.results.websocket) {
+                return bench.results.websocket;
+            }
+            
+            // Fall back to old direct format
+            if (bench.messages_per_second !== undefined || bench.avg_latency_ms !== undefined) {
+                // Check if this is a broken benchmark (no messages received)
+                if (bench.total_messages_received === 0 && bench.avg_latency_ms === 0) {
+                    // This is a broken benchmark
+                    console.warn(`Broken benchmark detected for commit ${commit.commit_short}: no messages received`);
+                    return {
+                        average_latency_ms: 0,
+                        p50_latency_ms: 0,
+                        p95_latency_ms: 0,
+                        p99_latency_ms: 0,
+                        messages_per_second: bench.messages_per_second || 0,
+                        bytes_per_second: 0,
+                        bandwidth_mbps: 0,
+                        is_broken: true
+                    };
+                }
+                
+                // Map old format to new format keys
+                let bytesPerSec = bench.bytes_per_second || 0;
+                if (!bytesPerSec && bench.avg_bandwidth_mbps) {
+                    bytesPerSec = bench.avg_bandwidth_mbps * 125000; // Mbps to bytes/sec
+                } else if (!bytesPerSec && bench.bandwidth_mbps) {
+                    bytesPerSec = bench.bandwidth_mbps * 125000;
+                }
+                
+                return {
+                    average_latency_ms: bench.avg_latency_ms || bench.average_latency_ms || 0,
+                    p50_latency_ms: bench.p50_latency_ms || 0,
+                    p95_latency_ms: bench.p95_latency_ms || 0,
+                    p99_latency_ms: bench.p99_latency_ms || 0,
+                    messages_per_second: bench.messages_per_second || 0,
+                    bytes_per_second: bytesPerSec,
+                    bandwidth_mbps: bench.bandwidth_mbps || bench.avg_bandwidth_mbps || 0
+                };
+            }
+            
+            return null;
+        }
+        
+        // Test extraction
+        const output = document.getElementById('output');
+        let results = "Testing data extraction:\n\n";
+        
+        testData.forEach(commit => {
+            const metrics = extractMetrics(commit);
+            results += `Commit: ${commit.commit_short}\n`;
+            if (metrics) {
+                results += `  Latency: ${metrics.average_latency_ms} ms\n`;
+                results += `  Messages/sec: ${metrics.messages_per_second}\n`;
+                results += `  Bandwidth: ${(metrics.bytes_per_second / 1024 / 1024).toFixed(2)} MB/s\n`;
+                results += `  Is Broken: ${metrics.is_broken || false}\n`;
+            } else {
+                results += `  No metrics extracted\n`;
+            }
+            results += "\n";
+        });
+        
+        // Test chart data generation
+        results += "\nChart data (filtering broken):\n";
+        const latencyData = testData.map(c => {
+            const metrics = extractMetrics(c);
+            if (metrics && metrics.is_broken) return null;
+            return metrics ? metrics.average_latency_ms : null;
+        });
+        results += `Latency points: ${JSON.stringify(latencyData)}\n`;
+        
+        const throughputData = testData.map(c => {
+            const metrics = extractMetrics(c);
+            // Don't filter throughput for broken benchmarks (they still sent messages)
+            return metrics ? metrics.messages_per_second : 0;
+        });
+        results += `Throughput points: ${JSON.stringify(throughputData)}\n`;
+        
+        output.textContent = results;
+    </script>
+</body>
+</html>
