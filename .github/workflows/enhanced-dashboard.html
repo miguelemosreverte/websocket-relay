@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Relay - Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            color: #60a5fa;
+            margin-bottom: 1rem;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: rgba(51, 65, 85, 0.3);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #60a5fa;
+            margin-bottom: 0.5rem;
+        }
+        .metric-label {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 2rem;
+        }
+        .chart-container.small {
+            height: 250px;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+        .tab-button {
+            padding: 0.75rem 1.5rem;
+            background: rgba(51, 65, 85, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 8px;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .tab-button:hover {
+            background: rgba(71, 85, 105, 0.5);
+        }
+        .tab-button.active {
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            border-color: transparent;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .test-config {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-family: 'Courier New', monospace;
+        }
+        .commit-selector {
+            margin-bottom: 1rem;
+        }
+        select {
+            background: rgba(30, 41, 59, 0.8);
+            color: #e2e8f0;
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 WebSocket Relay Performance Dashboard</h1>
+            <p>Real-time performance metrics and historical trends</p>
+        </header>
+
+        <!-- Current Status -->
+        <div class="card">
+            <h2>📊 Latest Benchmark Results</h2>
+            <div class="metrics-grid" id="latest-metrics">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Test Configuration -->
+        <div class="card">
+            <h2>⚙️ Test Configuration</h2>
+            <div class="test-config" id="test-config">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Performance Over Time Charts -->
+        <div class="card">
+            <h2>📈 Performance During Test (5 seconds)</h2>
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('throughput')">Throughput</button>
+                <button class="tab-button" onclick="showTab('latency')">Latency</button>
+                <button class="tab-button" onclick="showTab('messages')">Messages</button>
+                <button class="tab-button" onclick="showTab('errors')">Errors</button>
+            </div>
+            
+            <div id="throughput" class="tab-content active">
+                <div class="chart-container">
+                    <canvas id="throughputChart"></canvas>
+                </div>
+                <p>Shows bandwidth utilization (Mbps) over the 5-second test duration.</p>
+            </div>
+            
+            <div id="latency" class="tab-content">
+                <div class="chart-container">
+                    <canvas id="latencyChart"></canvas>
+                </div>
+                <p>Shows latency percentiles (ms) throughout the test.</p>
+            </div>
+            
+            <div id="messages" class="tab-content">
+                <div class="chart-container">
+                    <canvas id="messagesChart"></canvas>
+                </div>
+                <p>Shows cumulative messages sent and received.</p>
+            </div>
+            
+            <div id="errors" class="tab-content">
+                <div class="chart-container">
+                    <canvas id="errorsChart"></canvas>
+                </div>
+                <p>Shows error count and active connections over time.</p>
+            </div>
+        </div>
+
+        <!-- Historical Performance -->
+        <div class="card">
+            <h2>📊 Historical Performance (Last 20 Commits)</h2>
+            <div class="chart-container">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Commit Comparison -->
+        <div class="card">
+            <h2>🔍 Commit Performance Details</h2>
+            <div class="commit-selector">
+                <label>Select commit: </label>
+                <select id="commitSelector" onchange="showCommitDetails()">
+                    <!-- Populated by JavaScript -->
+                </select>
+            </div>
+            <div id="commit-details">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data embedded by GitHub Actions
+        const deploymentData = DEPLOYMENT_DATA_PLACEHOLDER;
+        const historyData = HISTORY_DATA_PLACEHOLDER;
+
+        // Chart configurations
+        const chartColors = {
+            blue: 'rgb(96, 165, 250)',
+            purple: 'rgb(167, 139, 250)',
+            green: 'rgb(74, 222, 128)',
+            red: 'rgb(248, 113, 113)',
+            yellow: 'rgb(251, 191, 36)',
+            cyan: 'rgb(34, 211, 238)',
+        };
+
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toFixed(0);
+        }
+
+        function renderLatestMetrics() {
+            const bench = deploymentData.benchmark_results;
+            if (!bench) return;
+
+            const metricsHtml = `
+                <div class="metric-card">
+                    <div class="metric-value">${formatNumber(bench.total_messages_sent || 0)}</div>
+                    <div class="metric-label">Messages Sent</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(bench.messages_per_second || 0).toFixed(0)}</div>
+                    <div class="metric-label">Messages/Second</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(bench.peak_bandwidth_mbps || bench.bandwidth_mbps || 0).toFixed(1)}</div>
+                    <div class="metric-label">Peak Bandwidth (Mbps)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(bench.avg_latency_ms || 0).toFixed(1)}</div>
+                    <div class="metric-label">Avg Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(bench.p95_latency_ms || 0).toFixed(1)}</div>
+                    <div class="metric-label">P95 Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${(bench.p99_latency_ms || 0).toFixed(1)}</div>
+                    <div class="metric-label">P99 Latency (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${bench.connection_count || 0}</div>
+                    <div class="metric-label">Connections</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${bench.errors || 0}</div>
+                    <div class="metric-label">Errors</div>
+                </div>
+            `;
+            document.getElementById('latest-metrics').innerHTML = metricsHtml;
+        }
+
+        function renderTestConfig() {
+            const bench = deploymentData.benchmark_results;
+            if (!bench || !bench.test_config) {
+                document.getElementById('test-config').innerHTML = `
+                    <strong>Test Configuration:</strong><br>
+                    • Clients: 50<br>
+                    • Duration: 5 seconds<br>
+                    • Messages per client/sec: 50<br>
+                    • Message size: 1KB<br>
+                    • Expected load: 2500 msg/s, ~20 Mbps
+                `;
+                return;
+            }
+
+            const config = bench.test_config;
+            document.getElementById('test-config').innerHTML = `
+                <strong>Test Configuration:</strong><br>
+                • Clients: ${config.num_clients}<br>
+                • Duration: ${config.test_duration_seconds} seconds<br>
+                • Messages per client/sec: ${config.messages_per_client_per_sec}<br>
+                • Message size: ${config.message_size_bytes} bytes<br>
+                • Server: ${config.server_url}<br>
+                • Expected load: ${config.num_clients * config.messages_per_client_per_sec} msg/s
+            `;
+        }
+
+        function renderTimeSeriesCharts() {
+            const bench = deploymentData.benchmark_results;
+            if (!bench || !bench.time_series) return;
+
+            const timeSeries = bench.time_series;
+            const timestamps = timeSeries.map(s => s.timestamp.toFixed(1) + 's');
+
+            // Throughput Chart
+            new Chart(document.getElementById('throughputChart'), {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [{
+                        label: 'Throughput (Mbps)',
+                        data: timeSeries.map(s => s.throughput_mbps),
+                        borderColor: chartColors.blue,
+                        backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Network Throughput Over Time'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Mbps'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Latency Chart
+            new Chart(document.getElementById('latencyChart'), {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: 'Average',
+                            data: timeSeries.map(s => s.avg_latency_ms),
+                            borderColor: chartColors.green,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'P95',
+                            data: timeSeries.map(s => s.p95_latency_ms),
+                            borderColor: chartColors.yellow,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'P99',
+                            data: timeSeries.map(s => s.p99_latency_ms),
+                            borderColor: chartColors.red,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Latency Percentiles Over Time'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Milliseconds'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Messages Chart
+            new Chart(document.getElementById('messagesChart'), {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: 'Sent',
+                            data: timeSeries.map(s => s.messages_sent),
+                            borderColor: chartColors.blue,
+                            backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                            fill: true
+                        },
+                        {
+                            label: 'Received',
+                            data: timeSeries.map(s => s.messages_received),
+                            borderColor: chartColors.purple,
+                            backgroundColor: 'rgba(167, 139, 250, 0.1)',
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Messages Sent vs Received'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Total Messages'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Errors Chart
+            new Chart(document.getElementById('errorsChart'), {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: 'Active Connections',
+                            data: timeSeries.map(s => s.active_connections),
+                            borderColor: chartColors.green,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Error Count',
+                            data: timeSeries.map(s => s.error_count),
+                            borderColor: chartColors.red,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Connection Health'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Connections'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Errors'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderHistoricalChart() {
+            if (!historyData || historyData.length === 0) return;
+
+            const chartHistory = historyData.slice(0, 20).reverse();
+            const labels = chartHistory.map(h => h.commit_short || 'unknown');
+
+            new Chart(document.getElementById('historyChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Messages/Second',
+                            data: chartHistory.map(h => h.benchmark_results?.messages_per_second || 0),
+                            borderColor: chartColors.blue,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Peak Bandwidth (Mbps)',
+                            data: chartHistory.map(h => 
+                                h.benchmark_results?.peak_bandwidth_mbps || 
+                                h.benchmark_results?.bandwidth_mbps || 0),
+                            borderColor: chartColors.purple,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'P99 Latency (ms)',
+                            data: chartHistory.map(h => h.benchmark_results?.p99_latency_ms || 0),
+                            borderColor: chartColors.red,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Performance Trends Across Commits'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Throughput'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Latency (ms)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Populate commit selector
+            const selector = document.getElementById('commitSelector');
+            historyData.forEach((commit, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.text = `${commit.commit_short} - ${new Date(commit.timestamp).toLocaleString()}`;
+                selector.appendChild(option);
+            });
+        }
+
+        function showCommitDetails() {
+            const index = document.getElementById('commitSelector').value;
+            if (!historyData || !historyData[index]) return;
+
+            const commit = historyData[index];
+            const bench = commit.benchmark_results;
+            
+            if (!bench) {
+                document.getElementById('commit-details').innerHTML = '<p>No benchmark data available for this commit.</p>';
+                return;
+            }
+
+            const detailsHtml = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">${commit.commit_short}</div>
+                        <div class="metric-label">Commit</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${(bench.duration_seconds || 0).toFixed(1)}s</div>
+                        <div class="metric-label">Duration</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${formatNumber(bench.total_messages_sent || 0)}</div>
+                        <div class="metric-label">Messages</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${(bench.messages_per_second || 0).toFixed(0)}</div>
+                        <div class="metric-label">Msg/Sec</div>
+                    </div>
+                </div>
+                <div class="chart-container small">
+                    <canvas id="commitChart"></canvas>
+                </div>
+            `;
+            document.getElementById('commit-details').innerHTML = detailsHtml;
+
+            // Render commit-specific chart if time series data exists
+            if (bench.time_series) {
+                const timeSeries = bench.time_series;
+                const timestamps = timeSeries.map(s => s.timestamp.toFixed(1) + 's');
+
+                new Chart(document.getElementById('commitChart'), {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [
+                            {
+                                label: 'Throughput (Mbps)',
+                                data: timeSeries.map(s => s.throughput_mbps),
+                                borderColor: chartColors.blue,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'P99 Latency (ms)',
+                                data: timeSeries.map(s => s.p99_latency_ms),
+                                borderColor: chartColors.red,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'Mbps'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'ms'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            renderLatestMetrics();
+            renderTestConfig();
+            renderTimeSeriesCharts();
+            renderHistoricalChart();
+            if (historyData && historyData.length > 0) {
+                showCommitDetails();
+            }
+        });
+    </script>
+</body>
+</html>

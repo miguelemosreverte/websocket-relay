@@ -89,15 +89,17 @@ jobs:
         cd test
         if [ -n "${{ secrets.DOMAIN }}" ]; then
           SERVER_URL="https://${{ secrets.DOMAIN }}" \
-            NUM_CLIENTS=20 \
+            NUM_CLIENTS=50 \
+            DURATION=5s \
             OUTPUT_FILE="../benchmark-results.json" \
-            go run benchmark.go
+            go run benchmark-enhanced.go
         else
           SERVER_URL="https://${{ secrets.SERVER_IP }}" \
             SKIP_TLS_VERIFY=true \
-            NUM_CLIENTS=20 \
+            NUM_CLIENTS=50 \
+            DURATION=5s \
             OUTPUT_FILE="../benchmark-results.json" \
-            go run benchmark.go
+            go run benchmark-enhanced.go
         fi
         cd ..
         
@@ -201,8 +203,10 @@ jobs:
         HISTORY_DATA=$(cat benchmarks/history.json 2>/dev/null || echo '[]')
         STATUS=$(echo "$DEPLOYMENT_DATA" | jq -r '.deployment_status')
         
-        # Create the HTML with embedded JSON data
-        cat > index.html << 'EOF'
+        # Copy enhanced dashboard template
+        cp ${{ github.workspace }}/.github/workflows/enhanced-dashboard.html index.html
+        
+        # The rest will be handled by Python replacement below
         <!DOCTYPE html>
         <html lang="en">
         <head>
