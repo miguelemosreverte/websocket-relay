@@ -33,7 +33,7 @@ echo "Building version: $COMMIT_HASH"
 
 # Build the Go binary
 echo "Building Go binary..."
-COMMIT_HASH="$COMMIT_HASH" BUILD_TIME="$BUILD_TIME" go build -ldflags="-s -w" -o "$BINARY_NAME" main.go
+COMMIT_HASH="$COMMIT_HASH" BUILD_TIME="$BUILD_TIME" go build -ldflags="-s -w" -o "$BINARY_NAME" main.go websocket.go
 
 # Stop existing service if running
 if [ -f "$PID_FILE" ]; then
