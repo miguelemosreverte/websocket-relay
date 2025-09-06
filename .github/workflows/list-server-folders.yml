@@ -1,0 +1,275 @@
+name: List Server Folders
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  list-folders:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+    - name: List server folders
+      run: |
+        echo "# Server Directory Listing" > server-folders.md
+        echo "Generated at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> server-folders.md
+        echo "" >> server-folders.md
+        echo "## Root Directory Structure" >> server-folders.md
+        echo '```' >> server-folders.md
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "ls -la /" >> server-folders.md
+        echo '```' >> server-folders.md
+        echo "" >> server-folders.md
+        echo "## Home Directory" >> server-folders.md
+        echo '```' >> server-folders.md
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "ls -la ~" >> server-folders.md
+        echo '```' >> server-folders.md
+        echo "" >> server-folders.md
+        echo "## Directory Tree (First 3 Levels)" >> server-folders.md
+        echo '```' >> server-folders.md
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "command -v tree >/dev/null 2>&1 && tree -L 3 / 2>/dev/null | head -200 || find / -maxdepth 3 -type d 2>/dev/null | head -100" >> server-folders.md
+        echo '```' >> server-folders.md
+
+    - name: Convert to HTML
+      run: |
+        cat > index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Hetzner Server Directory Listing</title>
+            <style>
+                :root {
+                    --bg-primary: #0a0e27;
+                    --bg-secondary: #1a1f3a;
+                    --text-primary: #e0e6ed;
+                    --text-secondary: #a0a9b8;
+                    --accent: #00d4ff;
+                    --border: #2a2f4a;
+                }
+                
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+                    color: var(--text-primary);
+                    min-height: 100vh;
+                    padding: 2rem;
+                }
+                
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                
+                header {
+                    text-align: center;
+                    margin-bottom: 3rem;
+                    padding-bottom: 2rem;
+                    border-bottom: 2px solid var(--border);
+                }
+                
+                h1 {
+                    font-size: 2.5rem;
+                    margin-bottom: 0.5rem;
+                    background: linear-gradient(135deg, var(--accent), #00ff88);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }
+                
+                .timestamp {
+                    color: var(--text-secondary);
+                    font-size: 0.9rem;
+                }
+                
+                .section {
+                    background: rgba(26, 31, 58, 0.5);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1.5rem;
+                    margin-bottom: 2rem;
+                    backdrop-filter: blur(10px);
+                }
+                
+                h2 {
+                    color: var(--accent);
+                    margin-bottom: 1rem;
+                    font-size: 1.5rem;
+                }
+                
+                pre {
+                    background: var(--bg-primary);
+                    border: 1px solid var(--border);
+                    border-radius: 4px;
+                    padding: 1rem;
+                    overflow-x: auto;
+                    font-family: 'Courier New', monospace;
+                    font-size: 0.9rem;
+                    line-height: 1.4;
+                    color: var(--text-primary);
+                }
+                
+                .loading {
+                    text-align: center;
+                    padding: 2rem;
+                    color: var(--text-secondary);
+                }
+                
+                .error {
+                    background: rgba(255, 0, 0, 0.1);
+                    border: 1px solid rgba(255, 0, 0, 0.3);
+                    color: #ff6b6b;
+                    padding: 1rem;
+                    border-radius: 4px;
+                    margin-bottom: 1rem;
+                }
+                
+                footer {
+                    text-align: center;
+                    margin-top: 3rem;
+                    padding-top: 2rem;
+                    border-top: 1px solid var(--border);
+                    color: var(--text-secondary);
+                    font-size: 0.85rem;
+                }
+                
+                a {
+                    color: var(--accent);
+                    text-decoration: none;
+                }
+                
+                a:hover {
+                    text-decoration: underline;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <h1>🖥️ Hetzner Server Directory Listing</h1>
+                    <div class="timestamp" id="timestamp">Loading...</div>
+                </header>
+                
+                <div id="content" class="loading">
+                    <p>Loading server directory information...</p>
+                </div>
+                
+                <footer>
+                    <p>Automatically generated via GitHub Actions</p>
+                    <p><a href="https://github.com/miguelemosreverte/websocket-relay">View Repository</a></p>
+                </footer>
+            </div>
+            
+            <script>
+                async function loadServerData() {
+                    try {
+                        const response = await fetch('server-folders.md');
+                        const text = await response.text();
+                        
+                        // Parse the markdown content
+                        const lines = text.split('\n');
+                        let html = '';
+                        let inCodeBlock = false;
+                        let codeContent = '';
+                        
+                        for (const line of lines) {
+                            if (line.startsWith('# ')) {
+                                // Skip main title as we have our own
+                            } else if (line.startsWith('Generated at: ')) {
+                                document.getElementById('timestamp').textContent = line;
+                            } else if (line.startsWith('## ')) {
+                                if (inCodeBlock && codeContent) {
+                                    html += '</pre></div>';
+                                    inCodeBlock = false;
+                                    codeContent = '';
+                                }
+                                const title = line.substring(3);
+                                html += `<div class="section"><h2>${title}</h2>`;
+                            } else if (line === '```') {
+                                if (!inCodeBlock) {
+                                    html += '<pre>';
+                                    inCodeBlock = true;
+                                } else {
+                                    html += codeContent + '</pre></div>';
+                                    inCodeBlock = false;
+                                    codeContent = '';
+                                }
+                            } else if (inCodeBlock) {
+                                codeContent += line + '\n';
+                            }
+                        }
+                        
+                        if (inCodeBlock && codeContent) {
+                            html += codeContent + '</pre></div>';
+                        }
+                        
+                        document.getElementById('content').className = '';
+                        document.getElementById('content').innerHTML = html || '<div class="error">No data available</div>';
+                        
+                    } catch (error) {
+                        document.getElementById('content').innerHTML = `
+                            <div class="error">
+                                <h2>Error Loading Data</h2>
+                                <p>${error.message}</p>
+                            </div>
+                        `;
+                    }
+                }
+                
+                // Load data when page loads
+                loadServerData();
+                
+                // Reload every 5 minutes
+                setInterval(loadServerData, 5 * 60 * 1000);
+            </script>
+        </body>
+        </html>
+        EOF
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: server-listing
+        path: |
+          server-folders.md
+          index.html
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+
+    - name: Upload to GitHub Pages
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: .
+
+  deploy-pages:
+    needs: list-folders
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
