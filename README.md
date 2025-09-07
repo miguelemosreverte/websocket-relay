@@ -13,5 +13,5 @@ A high-performance WebSocket relay server built with Go, automatically deployed 
 - Room-based isolation
 - Automatic HTTPS with Let's Encrypt
 - WebSocket Secure (WSS) support
-- Performance benchmarking
+- Performance benchmarking with GitHub Actions capturing metrics per commit
 - CI/CD with GitHub Actions
